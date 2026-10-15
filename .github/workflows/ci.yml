@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Fetch the pinned Fanta engine
+        run: ./scripts/fetch-engine
+
+      - name: Install native Skia dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libfreetype6-dev libegl1-mesa-dev libgl1-mesa-dev
+
+      # The override keeps the engine's rust-toolchain.toml from installing
+      # targets and components this build does not use.
+      - name: Install Rust 1.95
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal
+          rustup override set 1.95.0 --path .engine/fanta-edit
+          rustup target add wasm32-unknown-emscripten --toolchain 1.95.0
+
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: .engine/fanta-edit -> target
+          shared-key: fanta-js-rust-1.95-emscripten-6.0.12
+
+      - name: Build the native playback fixture
+        working-directory: .engine/fanta-edit
+        run: cargo build --locked -p fanta-runtime --example playback_fixture
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Install pnpm 9.15
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Install Emscripten 6.0.12
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "${RUNNER_TEMP}/fanta-emsdk"
+          "${RUNNER_TEMP}/fanta-emsdk/emsdk" install 6.0.12
+          "${RUNNER_TEMP}/fanta-emsdk/emsdk" activate 6.0.12
+          echo "EMSDK=${RUNNER_TEMP}/fanta-emsdk" >> "${GITHUB_ENV}"
+
+      - name: Build the browser and Node WASM module
+        run: ./scripts/build-wasm
+
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @fanta/runtime exec playwright install --with-deps chromium firefox webkit
+
+      - name: Test actual WASM playback in Node
+        env:
+          FANTA_NATIVE_FIXTURE: ${{ github.workspace }}/.engine/fanta-edit/target/debug/examples/playback_fixture
+        run: pnpm --filter @fanta/runtime test
+
+      - name: Test Chromium, Firefox and WebKit
+        run: pnpm --filter @fanta/runtime run test:browser
+
+      - name: Test the SDK
+        run: pnpm --filter @fanta/sdk test
+
+      - name: Preserve browser verification evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fanta-runtime-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            packages/runtime/playwright-report
+            packages/runtime/test-results
+          if-no-files-found: ignore
+          retention-days: 14

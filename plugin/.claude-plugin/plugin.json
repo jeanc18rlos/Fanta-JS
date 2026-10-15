@@ -1,0 +1,19 @@
+{
+  "name": "fanta",
+  "version": "0.2.0",
+  "description": "Drive the Fantaisa design canvas from Claude Code — connect to the live editor's MCP server and design with the agent build loop.",
+  "author": {
+    "name": "Fantaisa"
+  },
+  "homepage": "https://github.com/jeanc18rlos/Fanta-JS",
+  "repository": "https://github.com/jeanc18rlos/Fanta-JS",
+  "license": "MIT",
+  "keywords": [
+    "design",
+    "mcp",
+    "canvas",
+    "figma",
+    "fantaisa",
+    "agent"
+  ]
+}

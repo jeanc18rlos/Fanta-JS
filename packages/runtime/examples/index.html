@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fanta runtime</title>
+<style>
+  body {font:16px system-ui;margin:32px;background:#121722;color:#eef1f8}
+  canvas {display:block;width:min(800px,100%);height:450px;border-radius:12px;touch-action:none}
+  button {margin:16px 8px 0 0;padding:10px 16px}
+  #status {max-width:800px;white-space:pre-wrap}
+</style>
+<h1>FNX + FSS prototype</h1>
+<canvas id="prototype" aria-label="Interactive Fanta prototype"></canvas>
+<button id="restart">Restart</button><button id="motion">Play motion</button><button id="pause">Pause</button>
+<p id="status">Loading…</p>
+<script type="module">
+  import {createRuntime} from "../src/index.js";
+  import {exampleSource,ids} from "./source.js";
+  const status=document.querySelector("#status");
+  try {
+    const runtime=await createRuntime();
+    const bytes=new Uint8Array(await (await fetch("../../../fixtures/fonts/source-sans-3/SourceSans3-Variable.ttf")).arrayBuffer());
+    const source=exampleSource({text:true,graphics:true});
+    source.fonts=[{family:"Runtime Sans",weight:400,bytes}];
+    const program=await runtime.compileSource(source);
+    const player=await runtime.createPlayer({program,canvas:document.querySelector("#prototype")});
+    player.on("error",error=>{status.textContent=error.message??JSON.stringify(error);});
+    player.on("navigate",()=>{status.textContent="The delayed interaction navigated to the next frame.";});
+    document.querySelector("#restart").onclick=()=>{player.restart();status.textContent="Restarted";};
+    document.querySelector("#motion").onclick=()=>player.playClip(ids.clip,{mode:"pingPong"});
+    let paused=false;
+    document.querySelector("#pause").onclick=()=>{paused=!paused;paused?player.pausePlayback():player.resumePlayback();};
+    status.textContent="Ready. The prototype changes frame after two seconds.";
+    window.fanta={runtime,program,player};
+  } catch(error) {status.textContent=error.message;throw error;}
+</script>
+</html>

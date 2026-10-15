@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Check out the fanta-edit commit pinned in fanta-edit.rev: the Rust engine
+# and the fanta-runtime crate that scripts/build-wasm compiles.
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+revision="$(tr -d '[:space:]' < "$root/fanta-edit.rev")"
+engine="$root/.engine/fanta-edit"
+if [[ ! -d "$engine/.git" ]]; then
+  git init --quiet "$engine"
+  git -C "$engine" remote add origin https://github.com/jeanc18rlos/fanta-edit.git
+fi
+git -C "$engine" fetch --quiet --depth 1 origin "$revision"
+git -C "$engine" checkout --quiet --detach FETCH_HEAD
+echo "fanta-edit ${revision} is checked out in ${engine}"

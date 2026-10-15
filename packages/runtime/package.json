@@ -1,0 +1,33 @@
+{
+  "name": "@fanta/runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "FNX/FSS prototype and motion playback using the Fanta Rust engine",
+  "license": "GPL-3.0-only",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "dist",
+    "examples",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "../../scripts/build-wasm",
+    "test": "node --test test/*.test.js",
+    "test:integration": "node --test test/integration.test.js",
+    "test:browser": "playwright test",
+    "benchmark": "playwright test --project=chromium test/performance.spec.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "pngjs": "7.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

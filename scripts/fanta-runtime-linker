@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Skia 0.84 archives use Emscripten's JS exception ABI. Rust 1.95 injects
+# native WASM exceptions even for panic=abort, which prevents those imports.
+task_arguments=()
+for task_argument in "$@"; do
+  if [[ "$task_argument" != "-fwasm-exceptions" ]]; then
+    task_arguments+=("$task_argument")
+  fi
+done
+# std's foreign-exception landing pads still reference this native tag. The
+# JS ABI supplies no tag, and stable Rust cannot assemble one on this target.
+task_tag_object="$(mktemp "${TMPDIR:-/tmp}/fanta-runtime-tag.XXXXXX")"
+trap 'rm -f "$task_tag_object"' EXIT
+emcc -c -x assembler -o "$task_tag_object" - <<'ASSEMBLY'
+.globl __cpp_exception
+.tagtype __cpp_exception i32
+__cpp_exception:
+ASSEMBLY
+emcc "${task_arguments[@]}" "$task_tag_object"

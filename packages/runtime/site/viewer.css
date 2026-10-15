@@ -1,0 +1,173 @@
+:root {
+  color-scheme: light dark;
+  --bar: #1c1c1f;
+  --bar-text: #f4f4f6;
+  --bar-muted: #a6a6ad;
+  --control: #2c2c31;
+  --control-hover: #3a3a41;
+  --stage: #e5e5e8;
+  --stage-text: #3a3a41;
+  --focus: #6f8cff;
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --stage: #252528;
+    --stage-text: #d5d5da;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--stage);
+  color: var(--stage-text);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 12px;
+  background: var(--bar);
+  color: var(--bar-text);
+}
+
+.title {
+  overflow: hidden;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pages {
+  flex: 1;
+  min-width: 0;
+}
+
+.pages select,
+.camera button {
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--bar-text);
+  font: inherit;
+}
+
+.pages select {
+  max-width: 100%;
+  padding: 0 8px;
+}
+
+.camera {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.camera button {
+  min-width: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.camera button:hover {
+  background: var(--control-hover);
+}
+
+.camera output {
+  min-width: 52px;
+  color: var(--bar-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.stage {
+  position: relative;
+  overflow: hidden;
+}
+
+.stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.stage canvas.dragging {
+  cursor: grabbing;
+}
+
+.status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+}
+
+.status[hidden] {
+  display: none;
+}
+
+body.index {
+  display: block;
+  overflow: auto;
+}
+
+.contents {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 16px;
+}
+
+.contents h1 {
+  margin: 0 0 24px;
+  font-size: 28px;
+}
+
+.page-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.page-list a {
+  display: block;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: var(--bar);
+  color: var(--bar-text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.page-list a:hover {
+  background: var(--control-hover);
+}

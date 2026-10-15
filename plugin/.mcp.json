@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "fanta": {
+      "command": "/Applications/Fanta.app/Contents/MacOS/fanta",
+      "args": ["--mcp-stdio"]
+    }
+  }
+}

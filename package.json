@@ -1,0 +1,14 @@
+{
+  "name": "fanta-js",
+  "private": true,
+  "description": "Fanta's JavaScript and WebAssembly packages and its Claude Code plugin",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "fetch-engine": "./scripts/fetch-engine",
+    "build:wasm": "./scripts/build-wasm",
+    "test": "pnpm -r test"
+  }
+}
