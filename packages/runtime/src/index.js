@@ -128,12 +128,14 @@ class Runtime {
     const scale = positive(options.scale ?? (canvas ? globalThis.devicePixelRatio ?? 1 : 1), "scale");
     const clock = options.clock ?? (canvas ? "auto" : "manual");
     const input = options.input ?? "prototype";
+    const autoBind = options.autoBind ?? true;
     if (canvas) backingSize(width, height, scale);
     if (!['auto', 'manual'].includes(clock)) throw new TypeError("clock must be auto or manual");
     if (!["prototype", "none"].includes(input)) throw new TypeError("input must be prototype or none");
+    if (typeof autoBind !== "boolean") throw new TypeError("autoBind must be a boolean");
     if (clock === "auto" && typeof globalThis.requestAnimationFrame !== "function") throw new TypeError("Automatic playback requires a browser animation clock");
     const { handle } = this.transport.request({ operation: "createPlayer", program: program.handle, width, height, start: options.start ?? null });
-    const player = new Player(this, handle, { ...options, width, height, scale, clock, input, automaticScale: options.scale === undefined });
+    const player = new Player(this, handle, { ...options, width, height, scale, clock, input, autoBind, automaticScale: options.scale === undefined });
     try { player.initialize(); } catch (error) { player.dispose(); throw error; }
     this.players.add(player);
     return player;
@@ -189,6 +191,7 @@ class Player {
       this.attachBrowserEvents();
     }
     this.accept(this.raw("resize", { width: this.options.width, height: this.options.height, scale: this.options.scale }));
+    this.bindDefaultModes();
     this.accept(this.raw("state"));
     this.lastTime = performance.now();
     this.render(); this.scheduleNext();
@@ -196,6 +199,15 @@ class Player {
   raw(command, arguments_ = {}) {
     if (this.graphics !== null && !this.contextLost) this.runtime.transport.module.GL.makeContextCurrent(this.graphics);
     return this.runtime.transport.request({ operation: "command", player: this.handle, command, arguments: arguments_ });
+  }
+  bindDefaultModes() {
+    if (!this.options.autoBind) return;
+    const { variables, activeModes } = this.accept(this.raw("inspect")).inspection;
+    for (const collection of Object.values(variables.collections ?? {})) {
+      if (!Object.hasOwn(activeModes, collection.id) && collection.modes.some(mode => mode.id === collection.default_mode)) {
+        this.accept(this.raw("setMode", { collection: collection.id, mode: collection.default_mode }));
+      }
+    }
   }
   accept(result) {
     this.state = result.state; this.schedule = result.schedule;
@@ -222,10 +234,11 @@ class Player {
     this.assertAlive();
     try {
       this.synchronize();
-      const result = this.accept(this.raw(name, arguments_));
+      this.accept(this.raw(name, arguments_));
+      if (name === "restart") this.bindDefaultModes();
       if (this.options.clock === "manual") this.render();
       this.scheduleNext();
-      return structuredClone(result.state);
+      return structuredClone(this.state);
     } catch (error) {
       this.cancelScheduled();
       this.accept(this.raw("state"));
@@ -238,7 +251,7 @@ class Player {
   restart(start) { return this.command("restart", { start: start ?? null }); }
   setVariable(variable, value) { return this.command("setVariable", { variable, value }); }
   setMode(collection, mode) { return this.command("setMode", { collection, mode }); }
-  playClip(clip, options = {}) { return this.command("playClip", { clip, mode: options.mode ?? "once", scope: options.scope ?? null }); }
+  playClip(clip, options = {}) { return this.command("playClip", { clip, mode: options.mode ?? null, scope: options.scope ?? null }); }
   pauseClip() { return this.command("pauseClip"); }
   resumeClip() { return this.command("resumeClip"); }
   seekClip(timeMs) { return this.command("seekClip", { timeMs }); }
@@ -278,6 +291,13 @@ class Player {
     }
     this.render(); this.scheduleNext(); return structuredClone(result.state);
   }
+  resizeDrawingSurfaceToCanvas() {
+    this.assertAlive();
+    const canvas = this.options.canvas;
+    if (!canvas) throw new TypeError("resizeDrawingSurfaceToCanvas requires a canvas");
+    return this.resize(canvas.clientWidth, canvas.clientHeight,
+      this.options.automaticScale ? globalThis.devicePixelRatio ?? 1 : this.options.scale);
+  }
   on(name, listener) {
     this.assertAlive();
     if (typeof listener !== "function") throw new TypeError("Listener must be a function");
@@ -313,7 +333,8 @@ class Player {
     if (!module.GL) throw new RuntimeError("WASM module lacks WebGL support", "UnsupportedGraphics");
     const canvas = this.options.canvas;
     const [physicalWidth, physicalHeight] = backingSize(this.options.width, this.options.height, this.options.scale);
-    const context = canvas.getContext("webgl2", { alpha: true, antialias: false, depth: false, stencil: true, premultipliedAlpha: true });
+    // Manual and paused players draw once; WebKit GTK can otherwise present the previous buffer.
+    const context = canvas.getContext("webgl2", { alpha: true, antialias: false, depth: false, stencil: true, premultipliedAlpha: true, preserveDrawingBuffer: true });
     if (!context) throw new RuntimeError("WebGL2 is required", "UnsupportedGraphics");
     this.graphics = module.GL.registerContext(context, { majorVersion: 2 });
     this.setBackingSize(physicalWidth, physicalHeight);
@@ -364,7 +385,7 @@ class Player {
       const observer = new ResizeObserver(safely(entries => { const box = entries[0]?.contentRect; if (box?.width > 0 && box?.height > 0) this.resize(box.width, box.height, this.options.automaticScale ? globalThis.devicePixelRatio ?? 1 : this.options.scale); }));
       observer.observe(canvas); this.cleanup.push(() => observer.disconnect());
     }
-    listen(globalThis, "resize", () => { if (canvas.clientWidth > 0 && canvas.clientHeight > 0) this.resize(canvas.clientWidth, canvas.clientHeight, this.options.automaticScale ? globalThis.devicePixelRatio ?? 1 : this.options.scale); });
+    listen(globalThis, "resize", () => { if (canvas.clientWidth > 0 && canvas.clientHeight > 0) this.resizeDrawingSurfaceToCanvas(); });
   }
   attachInputEvents(canvas, listen) {
     const touchAction = canvas.style.touchAction;

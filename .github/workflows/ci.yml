@@ -81,11 +81,15 @@ jobs:
           FANTA_NATIVE_FIXTURE: ${{ github.workspace }}/.engine/fanta-edit/target/debug/examples/playback_fixture
         run: pnpm --filter @fanta/runtime test
 
-      - name: Test Chromium, Firefox and WebKit
-        run: pnpm --filter @fanta/runtime run test:browser
-
       - name: Test the SDK
         run: pnpm --filter @fanta/sdk test
+
+      - name: Verify public package contents
+        run: node scripts/verify-packages.mjs
+
+      - name: Test Chromium, Firefox and WebKit
+        # Linux Firefox needs a display to create its WebGL context.
+        run: xvfb-run -a pnpm --filter @fanta/runtime run test:browser
 
       - name: Preserve browser verification evidence
         if: ${{ !cancelled() }}

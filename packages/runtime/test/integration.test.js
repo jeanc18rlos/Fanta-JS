@@ -86,6 +86,66 @@ test("motion controls hold final samples, seek independently, pause, and emit co
   }finally{runtime.dispose();}
 });
 
+test("clip playback uses the authored loop mode unless the host overrides it",async()=>{
+  const runtime=await createRuntime();
+  try{
+    const source=exampleSource({delay:10000});
+    const motion=JSON.parse(source.files["doc/motion.json"]);
+    motion.clips[ids.clip].loop_mode="repeat";
+    source.files["doc/motion.json"]=JSON.stringify(motion);
+    const program=await runtime.compileSource(source);
+    const player=await runtime.createPlayer({program});
+    player.playClip(ids.clip);player.advanceBy(1500);
+    assert.equal(player.getState().clip.mode,"repeat");
+    assert.equal(player.getState().clip.playheadMs,500);
+    assert.equal(player.getState().clip.running,true);
+    player.playClip(ids.clip,{mode:"once"});player.advanceBy(1500);
+    assert.equal(player.getState().clip.mode,"once");
+    assert.equal(player.getState().clip.playheadMs,1000);
+    assert.equal(player.getState().clip.running,false);
+  }finally{runtime.dispose();}
+});
+
+test("automatic mode binding preserves authored choices, defaults, and independent sessions",async()=>{
+  const runtime=await createRuntime();
+  const theme="00000000000000000000000070",light="00000000000000000000000071",dark="00000000000000000000000072",opacity="00000000000000000000000073";
+  const fallback="00000000000000000000000074",normal="00000000000000000000000075",frameOpacity="00000000000000000000000076",empty="00000000000000000000000077";
+  try{
+    const original=await runtime.compileSource(exampleSource({delay:10000}));
+    const document=original.inspect();
+    document.variables={collections:{
+      [theme]:{id:theme,name:"Theme",modes:[{id:light,name:"Light"},{id:dark,name:"Dark"}],default_mode:light},
+      [fallback]:{id:fallback,name:"Defaults",modes:[{id:normal,name:"Normal"}],default_mode:normal},
+      [empty]:{id:empty,name:"Empty",modes:[],default_mode:"00000000000000000000000000"},
+    },variables:{
+      [opacity]:{id:opacity,collection:theme,name:"Opacity",ty:"float",values_by_mode:{[light]:{kind:"float",value:0.25},[dark]:{kind:"float",value:0.75}}},
+      [frameOpacity]:{id:frameOpacity,collection:fallback,name:"Opacity",ty:"float",values_by_mode:{[normal]:{kind:"float",value:0.5}}},
+    }};
+    document.active_modes={[theme]:dark};
+    const nodes=Object.values(document.scene.nodes);
+    nodes.find(node=>node.id===ids.target).bindings=[[{prop:"opacity"},opacity]];
+    nodes.find(node=>node.id===ids.home).bindings=[[{prop:"opacity"},frameOpacity]];
+    const program=await runtime.compileSource({files:{"doc.json":JSON.stringify(document)}});
+    const authored=program.toBundle();
+    const player=await runtime.createPlayer({program});
+    const manual=await runtime.createPlayer({program,autoBind:false});
+    const inspection=player.inspect();
+    assert.deepEqual(inspection.activeModes,{[theme]:dark,[fallback]:normal});
+    assert.equal(inspection.nodes.find(node=>node.occurrence.node===ids.target).opacity,0.75);
+    assert.equal(inspection.nodes.find(node=>node.occurrence.node===ids.home).opacity,0.5);
+    assert.deepEqual(manual.inspect().activeModes,{[theme]:dark});
+    assert.equal(manual.inspect().nodes.find(node=>node.occurrence.node===ids.home).opacity,0.5);
+    player.setMode(theme,light);
+    assert.equal(player.inspect().nodes.find(node=>node.occurrence.node===ids.target).opacity,0.25);
+    assert.equal(manual.inspect().nodes.find(node=>node.occurrence.node===ids.target).opacity,0.75);
+    player.restart();
+    assert.deepEqual(player.inspect().activeModes,{[theme]:dark,[fallback]:normal});
+    assert.deepEqual(program.toBundle(),authored);
+    assert.throws(()=>player.resizeDrawingSurfaceToCanvas(),/requires a canvas/);
+    await assert.rejects(runtime.createPlayer({program,autoBind:"true"}),/must be a boolean/);
+  }finally{runtime.dispose();}
+});
+
 test("supplied font bytes survive bundles; missing fonts and missing IDs are reported",async()=>{
   const runtime=await createRuntime();
   try{

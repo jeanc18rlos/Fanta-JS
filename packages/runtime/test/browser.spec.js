@@ -30,6 +30,11 @@ test("source and bundles render identical pixels and deterministic playback with
   const firstFrame=await page.locator("#first").screenshot();
   assert.deepEqual(firstFrame,await page.locator("#second").screenshot());
   assert.deepEqual(pixel(firstFrame,5,5),[23,32,51,255]);
+  await page.evaluate(async()=>{
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    document.body.style.backgroundColor="rgb(41, 52, 66)";
+  });
+  assert.deepEqual(firstFrame,await page.locator("#first").screenshot());
   assert.deepEqual(pixel(firstFrame,40,50),[64,88,239,255]);
   assert.deepEqual(pixel(firstFrame,125,35),[225,55,65,255]);
   assert.deepEqual(pixel(firstFrame,205,40),[243,152,41,255]);
@@ -64,7 +69,10 @@ test("automatic idle deadlines navigate without continuous animation",async({pag
 
 test("resize, disposed-program ownership, and graphics restoration keep session state",async({page,browserName})=>{
   await load(page);
-  await page.evaluate(()=>{fixture.program.dispose();fixture.player.playClip(fixture.ids.clip);fixture.player.advanceBy(200);fixture.player.resize(320,180,2);});
+  await page.evaluate(async()=>{
+    fixture.pinned=await fixture.runtime.createPlayer({program:fixture.program,canvas:fixture.canvas("pinned"),scale:2,clock:"manual"});
+    fixture.program.dispose();fixture.player.playClip(fixture.ids.clip);fixture.player.advanceBy(200);fixture.player.resize(320,180,2);
+  });
   expect(await page.locator("#first").evaluate(canvas=>canvas.width)).toBe(640);
   expect((await page.evaluate(()=>fixture.player.getState())).clip.playheadMs).toBe(200);
   assert.deepEqual(pixel(await page.locator("#first").screenshot(),125,35),[225,55,65,255]);
@@ -81,6 +89,16 @@ test("resize, disposed-program ownership, and graphics restoration keep session 
     expect((await page.evaluate(()=>fixture.player.getState())).clip.playheadMs).toBe(200);
     assert.deepEqual(pixel(await page.locator("#first").screenshot(),125,35),[225,55,65,255]);
   }
+  const resized=await page.evaluate(()=>{
+    const canvas=document.querySelector("#first");
+    canvas.style.width="480px";canvas.style.height="270px";
+    fixture.player.resizeDrawingSurfaceToCanvas();
+    const pinned=document.querySelector("#pinned");
+    pinned.style.width="480px";pinned.style.height="270px";
+    fixture.pinned.resizeDrawingSurfaceToCanvas();
+    return {width:canvas.width,height:canvas.height,pinned:[pinned.width,pinned.height],playhead:fixture.player.getState().clip.playheadMs};
+  });
+  expect(resized).toEqual({width:480,height:270,pinned:[960,540],playhead:200});
   await page.evaluate(()=>fixture.runtime.dispose());
   expect(await page.evaluate(()=>fixture.runtime.players.size)).toBe(0);
 });

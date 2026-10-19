@@ -13,7 +13,7 @@ export interface PlaybackState {
   clip: { clip: Identity; playheadMs: number | null; mode: "once" | "repeat" | "pingPong"; paused: boolean; running: boolean; scope: Occurrence | null } | null;
   schedule: Schedule; occurrences?: Occurrence[]; metrics?: { wholeFrameReadbacks: number; frameMicros?:number; renderedLayers?:number; peakSurfaceBytes?:number };
 }
-export type VariableValue = {kind:"float";value:number} | {kind:"color";value:{r:number;g:number;b:number;a:number}} | {kind:"boolean";value:boolean} | {kind:"string";value:string} | {kind:"text_style";value:Record<string,unknown>} | {kind:"alias";variable:Identity};
+export type VariableValue = {kind:"float";value:number} | {kind:"color";value:{r:number;g:number;b:number;a:number}} | {kind:"boolean";value:boolean} | {kind:"string";value:string} | {kind:"enum";value:string} | {kind:"image";value:Identity|null} | {kind:"text_style";value:Record<string,unknown>} | {kind:"alias";variable:Identity};
 export interface Program {
   readonly flows: Flow[]; readonly clips: Clip[]; readonly diagnostics: Diagnostic[];
   readonly capabilities: {media:"posters";liveVideo:false;liveAudio:false};
@@ -29,11 +29,12 @@ export interface Player {
   sendKey(key: string, type?: "down" | "up"): PlaybackState; scrollBy(x:number,y:number,deltaX:number,deltaY:number): PlaybackState; cancelPointer():PlaybackState;
   panBy(deltaX:number, deltaY:number): PlaybackState; zoomAt(x:number, y:number, factor:number): PlaybackState; fitView(): PlaybackState; getViewport(): Viewport;
   getState(): PlaybackState; inspect():{nodes:Array<{occurrence:Occurrence;name:string;transform:unknown;opacity:number;flags:unknown;data:unknown;styleAssignment:unknown}>;variables:unknown;activeModes:Record<Identity,Identity>}; resize(width:number,height:number,scale?:number): PlaybackState;
+  resizeDrawingSurfaceToCanvas(): PlaybackState;
   on(name:"navigate"|"link"|"clipCompleted"|"error"|"exit",listener:(event:any)=>void):()=>void; dispose():void;
 }
 export interface Runtime {
   compileSource(source:SourceBundle):Promise<Program>; loadBundle(bytes:Resource):Promise<Program>;
-  createPlayer(options:{program:Program;canvas?:HTMLCanvasElement;width?:number;height?:number;scale?:number;start?:Identity;clock?:"auto"|"manual";input?:"prototype"|"none"}):Promise<Player>;
+  createPlayer(options:{program:Program;canvas?:HTMLCanvasElement;width?:number;height?:number;scale?:number;start?:Identity;clock?:"auto"|"manual";input?:"prototype"|"none";autoBind?:boolean}):Promise<Player>;
   dispose():void;
 }
 export class RuntimeError extends Error { readonly code:string; }

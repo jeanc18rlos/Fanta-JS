@@ -13,8 +13,10 @@
   "files": [
     "src",
     "dist",
+    "site",
     "examples",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "../../scripts/build-wasm",
@@ -29,5 +31,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
