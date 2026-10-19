@@ -349,6 +349,8 @@ class Player {
     // Manual and paused players draw once; WebKit GTK can otherwise present the previous buffer.
     const context = canvas.getContext("webgl2", { alpha: true, antialias: false, depth: false, stencil: true, premultipliedAlpha: true, preserveDrawingBuffer: true });
     if (!context) throw new RuntimeError("WebGL2 is required", "UnsupportedGraphics");
+    // Skia queries advertised renderer details that Emscripten does not enable by default.
+    context.getExtension("WEBGL_debug_renderer_info");
     this.graphics = module.GL.registerContext(context, { majorVersion: 2 });
     this.setBackingSize(physicalWidth, physicalHeight);
     module.GL.makeContextCurrent(this.graphics);

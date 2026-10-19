@@ -2,6 +2,16 @@ import assert from "node:assert/strict";
 import {test,expect} from "@playwright/test";
 import {PNG} from "pngjs";
 
+const browserErrors = new WeakMap();
+test.beforeEach(async({page})=>{
+  const errors=[];browserErrors.set(page,errors);
+  page.on("pageerror",error=>errors.push(error.message));
+  page.on("console",message=>{if(message.type()==="error")errors.push(message.text());});
+});
+test.afterEach(async({page})=>{
+  expect(browserErrors.get(page)).toEqual([]);
+});
+
 function pixel(image,x,y) {
   const decoded=PNG.sync.read(image);
   return [...decoded.data.subarray((y*decoded.width+x)*4,(y*decoded.width+x)*4+4)];
