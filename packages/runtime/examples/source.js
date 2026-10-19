@@ -46,3 +46,33 @@ export function exampleSource({delay = 2000, text = false, graphics = false} = {
   if (graphics) source.files["assets/a_00000000000000000000000051.bin"] = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4AWN4aO74HwAFrwJZBIYpiwAAAABJRU5ErkJggg=="),character=>character.charCodeAt(0));
   return source;
 }
+
+export const fitIds = { ...ids, marker:"00000000000000000000000080", incoming:"00000000000000000000000081", overlay:"00000000000000000000000082" };
+
+export function fitSource({transition = {kind:"dissolve"}, delay = 10000, transitionMarkers = false} = {}) {
+  const source = exampleSource({delay});
+  const navigate = {action:{kind:"navigate",to:ids.done},transition:{style:transition,duration_ms:1000,easing:"linear"}};
+  const reactions = [
+    {id:"00000000000000000000000020",trigger:{kind:"key",keys:["N"]},...navigate},
+    {id:"00000000000000000000000021",trigger:{kind:"after_delay",delay_ms:delay},...navigate},
+    {id:"00000000000000000000000022",trigger:{kind:"key",keys:["O"]},action:{kind:"open_overlay",frame:fitIds.overlay,overlay:{position:{kind:"center"},background_dim:false,close_on_click_outside:true}}},
+  ];
+  const link = (id,url) => JSON.stringify([{id,trigger:{kind:"click"},action:{kind:"open_link",url}}]);
+  source.files["doc/presentation.json"] = JSON.stringify({frame_color:{r:255,g:255,b:255,a:255}});
+  source.files["pages/demo/page.fnx"] = `<Frame id="${ids.page}" name="Fit geometry">
+    <Frame id="${ids.home}" name="Wide" x={400} y={60} width={200} height={100} background={{"kind":"solid","color":fnxColor("#000000")}} reactions={${JSON.stringify(reactions)}}>
+      <Frame id="${ids.target}" name="Hit" x={80} y={20} width={20} height={20} background={{"kind":"solid","color":fnxColor("#FF0000")}} reactions={${link("00000000000000000000000023","https://example.invalid/fit-a")}} />
+      ${transitionMarkers ? `<Frame id="${fitIds.marker}" name="Outgoing marker" x={80} y={40} width={20} height={20} background={{"kind":"solid","color":fnxColor("#FF0000")}} />` : ""}
+    </Frame>
+    <Frame id="${ids.done}" name="Tall" x={900} y={60} width={100} height={200} background={{"kind":"solid","color":fnxColor("#000000")}}>
+      <Frame id="${fitIds.incoming}" name="Incoming marker" x={40} y={80} width={20} height={20} background={{"kind":"solid","color":fnxColor("#0000FF")}} reactions={${link("00000000000000000000000024","https://example.invalid/fit-b")}} />
+    </Frame>
+    <Frame id="${fitIds.overlay}" name="Overlay" x={1400} y={60} width={40} height={20} background={{"kind":"solid","color":fnxColor("#00FF00")}} reactions={${link("00000000000000000000000025","https://example.invalid/fit-overlay")}} />
+  </Frame>`;
+  const motion = JSON.parse(source.files["doc/motion.json"]);
+  const keyframes = Object.values(Object.values(motion.clips[ids.clip].tracks)[0].keyframes);
+  keyframes[0].value.value = 80;
+  keyframes[1].value.value = 100;
+  source.files["doc/motion.json"] = JSON.stringify(motion);
+  return source;
+}

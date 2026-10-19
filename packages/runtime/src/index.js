@@ -23,6 +23,11 @@ function positive(value, name) {
   return value;
 }
 
+function fitMode(value) {
+  if (!["contain", "cover", "fill"].includes(value)) throw new TypeError("fit must be contain, cover, or fill");
+  return value;
+}
+
 function backingSize(width, height, scale) {
   const physicalWidth = Math.max(1, Math.round(positive(width, "width") * positive(scale, "scale")));
   const physicalHeight = Math.max(1, Math.round(positive(height, "height") * scale));
@@ -129,13 +134,14 @@ class Runtime {
     const clock = options.clock ?? (canvas ? "auto" : "manual");
     const input = options.input ?? "prototype";
     const autoBind = options.autoBind ?? true;
+    const fit = fitMode(options.fit === undefined ? "contain" : options.fit);
     if (canvas) backingSize(width, height, scale);
     if (!['auto', 'manual'].includes(clock)) throw new TypeError("clock must be auto or manual");
     if (!["prototype", "none"].includes(input)) throw new TypeError("input must be prototype or none");
     if (typeof autoBind !== "boolean") throw new TypeError("autoBind must be a boolean");
     if (clock === "auto" && typeof globalThis.requestAnimationFrame !== "function") throw new TypeError("Automatic playback requires a browser animation clock");
-    const { handle } = this.transport.request({ operation: "createPlayer", program: program.handle, width, height, start: options.start ?? null });
-    const player = new Player(this, handle, { ...options, width, height, scale, clock, input, autoBind, automaticScale: options.scale === undefined });
+    const { handle } = this.transport.request({ operation: "createPlayer", program: program.handle, width, height, start: options.start ?? null, fit });
+    const player = new Player(this, handle, { ...options, width, height, scale, clock, input, autoBind, fit, automaticScale: options.scale === undefined });
     try { player.initialize(); } catch (error) { player.dispose(); throw error; }
     this.players.add(player);
     return player;
@@ -210,7 +216,9 @@ class Player {
     }
   }
   accept(result) {
-    this.state = result.state; this.schedule = result.schedule;
+    if (result.camera) this.camera = result.camera;
+    if (result.fitMode) this.fitMode = result.fitMode;
+    this.state = { ...result.state, camera: this.camera, fitMode: this.fitMode }; this.schedule = result.schedule;
     this.lastResponse = result.response;
     this.dirty ||= result.response?.needs_redraw ?? result.response?.needsRedraw ?? false;
     if (result.viewport) this.viewport = result.viewport;
@@ -264,8 +272,13 @@ class Player {
   scrollBy(x, y, deltaX, deltaY) { return this.command("scroll", { point: [x, y], delta: [deltaX, deltaY] }); }
   panBy(deltaX, deltaY) { return this.command("pan", { delta: [deltaX, deltaY] }); }
   zoomAt(x, y, factor) { return this.command("zoom", { point: [x, y], factor }); }
-  fitView() { return this.command("fit"); }
+  fitView(mode) {
+    this.assertAlive();
+    return this.command("fit", mode === undefined ? {} : { mode: fitMode(mode) });
+  }
   getViewport() { this.assertAlive(); return structuredClone(this.viewport); }
+  getCamera() { this.assertAlive(); return structuredClone(this.camera); }
+  getFitMode() { this.assertAlive(); return this.fitMode; }
   advanceBy(deltaMs) {
     this.assertAlive();
     if (!Number.isFinite(deltaMs) || deltaMs < 0) throw new TypeError("deltaMs must be finite and nonnegative");

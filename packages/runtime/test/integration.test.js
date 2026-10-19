@@ -5,7 +5,7 @@ import {existsSync} from "node:fs";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {createRuntime} from "../src/index.js";
-import {exampleSource,ids} from "../examples/source.js";
+import {exampleSource,fitSource,ids} from "../examples/source.js";
 
 test("source and deterministic bundles run the same Rust prototype in independent players",async()=>{
   const runtime=await createRuntime();
@@ -53,6 +53,61 @@ test("a page camera pans, zooms around a point, and refits without changing prot
     assert.equal(after.clockMs,before.clockMs);
     assert.deepEqual(after.schedule,before.schedule);
   }finally{runtime.dispose();}
+});
+
+test("fit policies use independent two-axis cameras for source, bundles, input, and paused resize",async()=>{
+  const runtime=await createRuntime();
+  try {
+    const program=await runtime.compileSource(fitSource());
+    const authored=program.toBundle();
+    const loaded=await runtime.loadBundle(authored);
+    for (const input of [program,loaded]) {
+      const other=await runtime.createPlayer({program:input,width:300,height:300});
+      assert.deepEqual(other.getCamera(),{center:[500,110],scale:[1.5,1.5]});
+      for (const [fit,scale,hit] of [["contain",[1.5,1.5],[130,125]],["cover",[3,3],[105,80]],["fill",[1.5,3],[130,80]]]) {
+        const player=await runtime.createPlayer({program:input,width:300,height:300,fit});
+        assert.deepEqual(player.getCamera(),{center:[500,110],scale});
+        assert.equal(player.getState().fitMode,fit);
+        assert.equal(player.getViewport().zoom,Math.min(...scale));
+        const links=[];player.on("link",event=>links.push(event.url));
+        player.sendPointer({type:"click",x:hit[0],y:hit[1]});
+        await Promise.resolve();
+        assert.deepEqual(links,["https://example.invalid/fit-a"]);
+        player.sendPointer({type:"click",x:20,y:20});
+        await Promise.resolve();assert.equal(links.length,1);
+        const before=player.getState();
+        for (const mode of [null,false,1,[],{},{contain:null},"Fill","stretch"]) {
+          assert.throws(()=>player.raw("fit",{mode}),/invalid|variant|expected|fit mode/i);
+          assert.deepEqual(player.getState(),before);
+        }
+        player.fitView("fill");
+        player.zoomAt(60,90,2);
+        assert.deepEqual(player.getCamera(),{center:[470,100],scale:[3,6]});
+        player.panBy(30,-12);
+        assert.deepEqual(player.getCamera(),{center:[460,102],scale:[3,6]});
+        player.fitView();
+        assert.deepEqual(player.getCamera(),{center:[500,110],scale:[1.5,3]});
+        player.playClip(ids.clip);player.advanceBy(250);player.pausePlayback();
+        const paused=player.getState();
+        player.resize(400,200,2);
+        assert.deepEqual(player.getCamera(),{center:[500,110],scale:[2,2]});
+        assert.equal(player.getFitMode(),"fill");
+        assert.equal(player.getState().clockMs,paused.clockMs);
+        assert.deepEqual(player.getState().clip,paused.clip);
+        assert.deepEqual(player.getState().schedule,paused.schedule);
+        assert.deepEqual(other.getCamera(),{center:[500,110],scale:[1.5,1.5]});
+        player.dispose();
+      }
+      other.dispose();
+    }
+    const baseline=await runtime.createPlayer({program,width:300,height:300});
+    for (const fit of [null,false,1,[],{},{contain:null},"Fill","stretch"]) {
+      assert.throws(()=>runtime.transport.request({operation:"createPlayer",program:program.handle,width:300,height:300,start:null,fit}),/Invalid argument fit/);
+    }
+    const next=await runtime.createPlayer({program,width:300,height:300,fit:"fill"});
+    assert.equal(next.handle,baseline.handle+1,"rejected creation consumed a handle");
+    assert.deepEqual(program.toBundle(),authored);
+  } finally { runtime.dispose(); }
 });
 
 test("motion controls hold final samples, seek independently, pause, and emit completion",async()=>{
@@ -203,6 +258,41 @@ test("native and WASM command states, geometry, and events have exact parity",as
       player.dispose();
     }
   }finally{runtime.dispose();}
+});
+
+test("native and WASM fit cameras agree through overlays, different-aspect navigation, and paused resize",async(t)=>{
+  const executable=process.env.FANTA_NATIVE_FIXTURE??fileURLToPath(new URL("../../../.engine/fanta-edit/target/debug/examples/playback_fixture",import.meta.url));
+  if(!existsSync(executable)){if(process.env.FANTA_NATIVE_FIXTURE)assert.fail(`Missing native fixture ${executable}`);t.skip("Build cargo example playback_fixture to run native parity");return;}
+  const source=fitSource();
+  const commands=[
+    {command:"state"},{command:"inspect"},
+    {command:"pointer",arguments:{type:"click",point:[130,80]}},
+    {command:"key",arguments:{key:"O"}},{command:"state"},
+    {command:"pointer",arguments:{type:"click",point:[150,175]}},
+    {command:"pointer",arguments:{type:"click",point:[150,115]}},
+    {command:"pan",arguments:{delta:[30,-12]}},
+    {command:"zoom",arguments:{point:[60,90],factor:2}},
+    {command:"fit",arguments:{mode:"cover"}},{command:"fit",arguments:{mode:"fill"}},
+    {command:"key",arguments:{key:"N"}},{command:"advanceBy",arguments:{deltaMs:250}},
+    {command:"pausePlayback"},{command:"resize",arguments:{width:400,height:200,scale:2}},
+    {command:"inspect"},{command:"resumePlayback"},{command:"advanceBy",arguments:{deltaMs:750}},
+    {command:"back"},{command:"advanceBy",arguments:{deltaMs:1000}},{command:"restart"},
+  ].map(command=>({...command,arguments:command.arguments??{}}));
+  const runtime=await createRuntime();
+  try {
+    const program=await runtime.compileSource(source);
+    for (const fit of ["contain","cover","fill"]) {
+      const options={width:300,height:300,fit};
+      const native=spawnSync(executable,{input:JSON.stringify({source:{files:Object.fromEntries(Object.entries(source.files).map(([path,value])=>[path,[...new TextEncoder().encode(value)]]))},options,commands}),encoding:"utf8"});
+      assert.equal(native.status,0,native.stderr);
+      const expected=JSON.parse(native.stdout);
+      for (const input of [program,await runtime.loadBundle(program.toBundle())]) {
+        const player=await runtime.createPlayer({program:input,...options});
+        assert.deepEqual(commands.map(({command,arguments:arguments_})=>player.raw(command,arguments_)),expected);
+        player.dispose();
+      }
+    }
+  } finally { runtime.dispose(); }
 });
 
 test("component clips require an occurrence and update only the selected placement",async()=>{
