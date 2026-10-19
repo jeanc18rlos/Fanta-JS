@@ -37,7 +37,7 @@ try {
   for (const [name, required] of Object.entries(packages)) {
     const directory = join(root, "packages", name);
     const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
-    assert.equal(manifest.name, `@fanta/${name}`);
+    assert.equal(manifest.name, `@jeanc18rlos/${name}`);
     assert.equal(manifest.version, "0.1.0");
     assert.equal(manifest.license, "GPL-3.0-only");
     assert.equal(manifest.publishConfig?.access, "public");

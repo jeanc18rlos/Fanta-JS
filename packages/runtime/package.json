@@ -1,5 +1,5 @@
 {
-  "name": "@fanta/runtime",
+  "name": "@jeanc18rlos/runtime",
   "version": "0.1.0",
   "type": "module",
   "description": "FNX/FSS prototype and motion playback using the Fanta Rust engine",
