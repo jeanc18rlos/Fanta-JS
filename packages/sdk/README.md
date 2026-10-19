@@ -1,9 +1,9 @@
 # Fanta SDK
 
-`@jeanc18rlos/sdk` provides JavaScript and TypeScript clients for creative runs, plans, steering, proposals, artifacts, native FNX authoring and curated OKF knowledge. Node 22+ supplies fetch and secure randomness; the client also accepts an injected fetch implementation. The feature is initially an internal workspace canary, so server authorization and the creative allowlist still apply.
+`fanta-sdk` provides JavaScript and TypeScript clients for creative runs, plans, steering, proposals, artifacts, native FNX authoring and curated OKF knowledge. Node 22+ supplies fetch and secure randomness; the client also accepts an injected fetch implementation. The feature is initially an internal workspace canary, so server authorization and the creative allowlist still apply.
 
 ```js
-import {FantaClient, nativeId, node, previewProjectProposal} from "@jeanc18rlos/sdk";
+import {FantaClient, nativeId, node, previewProjectProposal} from "fanta-sdk";
 
 const fanta = new FantaClient({
   baseUrl: process.env.FANTA_API_URL,

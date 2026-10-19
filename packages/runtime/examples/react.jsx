@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from "react";
-import {createRuntime} from "@jeanc18rlos/runtime";
+import {createRuntime} from "fanta-runtime";
 
 export function FantaPrototype({bundle}) {
   const canvas=useRef(null);

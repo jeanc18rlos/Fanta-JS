@@ -74,22 +74,22 @@ jobs:
       - name: Install dependencies
         run: |
           pnpm install --frozen-lockfile
-          pnpm --filter @jeanc18rlos/runtime exec playwright install --with-deps chromium firefox webkit
+          pnpm --filter fanta-runtime exec playwright install --with-deps chromium firefox webkit
 
       - name: Test actual WASM playback in Node
         env:
           FANTA_NATIVE_FIXTURE: ${{ github.workspace }}/.engine/fanta-edit/target/debug/examples/playback_fixture
-        run: pnpm --filter @jeanc18rlos/runtime test
+        run: pnpm --filter fanta-runtime test
 
       - name: Test the SDK
-        run: pnpm --filter @jeanc18rlos/sdk test
+        run: pnpm --filter fanta-sdk test
 
       - name: Verify public package contents
         run: node scripts/verify-packages.mjs
 
       - name: Test Chromium, Firefox and WebKit
         # Linux Firefox needs a display to create its WebGL context.
-        run: xvfb-run -a pnpm --filter @jeanc18rlos/runtime run test:browser
+        run: xvfb-run -a pnpm --filter fanta-runtime run test:browser
 
       - name: Preserve browser verification evidence
         if: ${{ !cancelled() }}

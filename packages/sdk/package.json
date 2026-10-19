@@ -1,5 +1,5 @@
 {
-  "name": "@jeanc18rlos/sdk",
+  "name": "fanta-sdk",
   "version": "0.1.0",
   "description": "Typed clients for Fanta creative runs, native FNX tools and curated knowledge",
   "type": "module",

@@ -1,6 +1,6 @@
 # Fanta runtime
 
-`@jeanc18rlos/runtime` loads FNX/FSS projects and plays their prototypes and motion through the Fanta Rust engine. Browser rendering uses Skia over WebGL2; Node.js supports compilation and manual state playback.
+`fanta-runtime` loads FNX/FSS projects and plays their prototypes and motion through the Fanta Rust engine. Browser rendering uses Skia over WebGL2; Node.js supports compilation and manual state playback.
 
 The WebAssembly module is built from the Rust engine in [fanta-edit](https://github.com/jeanc18rlos/fanta-edit) at the commit pinned in `fanta-edit.rev`. From the repository root, with the Rust 1.95 toolchain and an activated Emscripten 6.0.12 SDK:
 
@@ -8,7 +8,7 @@ The WebAssembly module is built from the Rust engine in [fanta-edit](https://git
 ./scripts/fetch-engine
 EMSDK=/path/to/emsdk ./scripts/build-wasm
 pnpm install
-pnpm --filter @jeanc18rlos/runtime test
+pnpm --filter fanta-runtime test
 ```
 
 Set `FANTA_EDIT_DIR` to build from an existing fanta-edit checkout instead of the pinned one.
@@ -16,7 +16,7 @@ Set `FANTA_EDIT_DIR` to build from an existing fanta-edit checkout instead of th
 The build produces `dist/fanta-runtime.mjs` and `dist/fanta_runtime_wasm.wasm`. Include both when deploying. `createRuntime({moduleUrl, wasmUrl})` supports custom asset locations. Each call initializes an isolated Emscripten module. The build adapter reconciles Rust 1.95's exception flags with Skia 0.84's prebuilt JavaScript exception ABI. Source files are parsed in Rust; FNX imports are static resource references and source expressions are never executed as JavaScript.
 
 ```js
-import {createRuntime} from "@jeanc18rlos/runtime";
+import {createRuntime} from "fanta-runtime";
 
 const runtime = await createRuntime();
 const program = await runtime.compileSource({files, fonts});
@@ -57,7 +57,7 @@ For read-only viewing, pass `input: "none"` to `createPlayer`: the canvas still 
 
 `getCamera()` returns the authoritative `{center:[x,y], scale:[xScale,yScale]}` in logical pixels per world unit. `getFitMode()` returns the current policy; both are also included as `camera` and `fitMode` in player state. The compatible `getViewport()` API returns `{center:[x,y], zoom}` with the smaller camera scale as `zoom`. Use `getCamera()` for fill geometry. Each player owns its camera and policy; fitting never changes the authored source or deployment bundle.
 
-The package includes `site/viewer.js` and `site/viewer.css`, the read-only page viewer used by `fanta-site` (pan, zoom, fit and a page switcher over an inert player). Pass the installed `@jeanc18rlos/runtime` directory to `fanta-site --runtime`; the exporter assembles these files with the API, WebAssembly loader, and binary into a standalone website.
+The package includes `site/viewer.js` and `site/viewer.css`, the read-only page viewer used by `fanta-site` (pan, zoom, fit and a page switcher over an inert player). Pass the installed `fanta-runtime` directory to `fanta-site --runtime`; the exporter assembles these files with the API, WebAssembly loader, and binary into a standalone website.
 
 `program.inspect()` returns an authored document snapshot. `player.inspect()` returns resolved node occurrences, geometry, variables, and modes. These copies can be inspected without changing playback. Controls include navigation/back/restart, flow selection, variable/mode updates, clip controls, pointer/keyboard/scroll inputs, `cancelPointer()`, and resize. Colors in variable values use `{kind:"color",value:{r,g,b,a}}`, with channels from 0 to 255. Host navigation, link, completion, and error callbacks run after the state step.
 
