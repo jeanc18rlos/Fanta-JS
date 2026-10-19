@@ -1,5 +1,5 @@
 {
-  "name": "@fanta/runtime",
+  "name": "fanta-runtime",
   "version": "0.1.0",
   "type": "module",
   "description": "FNX/FSS prototype and motion playback using the Fanta Rust engine",
@@ -13,8 +13,10 @@
   "files": [
     "src",
     "dist",
+    "site",
     "examples",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "../../scripts/build-wasm",
@@ -29,5 +31,8 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
