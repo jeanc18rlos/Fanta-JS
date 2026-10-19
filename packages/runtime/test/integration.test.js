@@ -87,9 +87,16 @@ test("fit policies use independent two-axis cameras for source, bundles, input, 
         assert.deepEqual(player.getCamera(),{center:[460,102],scale:[3,6]});
         player.fitView();
         assert.deepEqual(player.getCamera(),{center:[500,110],scale:[1.5,3]});
-        player.playClip(ids.clip);player.advanceBy(250);player.pausePlayback();
+        player.playClip(ids.clip);
+        const advanced=player.advanceBy(250);
+        assert.deepEqual(advanced.camera,player.getCamera());
+        assert.equal(advanced.fitMode,"fill");
+        player.pausePlayback();
         const paused=player.getState();
-        player.resize(400,200,2);
+        const resized=player.resize(400,200,2);
+        assert.deepEqual(resized.camera,{center:[500,110],scale:[2,2]});
+        assert.equal(resized.fitMode,"fill");
+        resized.camera.center[0]=0;
         assert.deepEqual(player.getCamera(),{center:[500,110],scale:[2,2]});
         assert.equal(player.getFitMode(),"fill");
         assert.equal(player.getState().clockMs,paused.clockMs);

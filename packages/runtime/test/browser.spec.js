@@ -284,14 +284,41 @@ test("programs isolate different supplied faces registered under the same family
   await page.evaluate(()=>{fixture.player.playClip(fixture.ids.clip);fixture.player.seekClip(0);});
   assert.deepEqual(original,await page.locator("#first").screenshot());
   await page.evaluate(async()=>{
-    for(let index=0;index<20;index++){
+    fixture.reuse=await fixture.runtime.createPlayer({program:fixture.program,canvas:fixture.canvas("reuse"),clock:"manual"});
+  });
+  const reusable=await page.locator("#reuse").screenshot();
+  const reuse=await page.evaluate(async()=>{
+    const canvas=document.getElementById("reuse");
+    fixture.reuse.dispose();
+    const pending=fixture.runtime.createPlayer({program:fixture.program,canvas,clock:"manual"});
+    let reserved=false;
+    try{await fixture.runtime.createPlayer({program:fixture.program,canvas,clock:"manual"});}
+    catch(error){if(error.code!=="CanvasInUse")throw error;reserved=true;}
+    fixture.reuse=await pending;
+    return {reserved,live:!canvas.getContext("webgl2").isContextLost()};
+  });
+  expect(reuse).toEqual({reserved:true,live:true});
+  assert.deepEqual(reusable,await page.locator("#reuse").screenshot());
+  await page.evaluate(()=>{fixture.reuse.dispose();document.getElementById("reuse").remove();});
+  for(let index=0;index<20;index++){
+    await page.evaluate(async()=>{
       const canvas=fixture.canvas("cycle");
       const player=await fixture.runtime.createPlayer({program:fixture.program,canvas,clock:"manual"});
+      const released=new Promise(resolve=>canvas.addEventListener("webglcontextlost",()=>setTimeout(resolve,0),{once:true}));
+      fixture.disposed={canvas:new WeakRef(canvas),player:new WeakRef(player)};
       player.playClip(fixture.ids.clip);player.advanceBy(20);player.dispose();canvas.remove();
-    }
-    if(fixture.runtime.players.size!==3)throw Error("Disposed players retained");
-    fixture.runtime.dispose();
-  });
+      await released;
+    });
+    // WebKit counts lost context objects until GC, even after the GPU resources are released.
+    await expect(async()=>{
+      await page.requestGC();
+      expect(await page.evaluate(()=>({canvas:!!fixture.disposed.canvas.deref(),player:!!fixture.disposed.player.deref()}))).toEqual({canvas:false,player:false});
+    }).toPass({intervals:[50,100,200],timeout:5000});
+  }
+  expect(await page.evaluate(()=>fixture.runtime.players.size)).toBe(3);
+  expect(await page.locator("#first").evaluate(canvas=>canvas.getContext("webgl2").isContextLost())).toBe(false);
+  assert.deepEqual(original,await page.locator("#first").screenshot());
+  await page.evaluate(()=>fixture.runtime.dispose());
 });
 
 test("an unstyled canvas keeps logical size when its backing scale changes",async({page})=>{

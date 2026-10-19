@@ -48,6 +48,13 @@ test("wrapper forwards fit policy and exposes the authoritative two-axis camera 
     assert.equal(player.getFitMode(),"fill");
     const camera = player.getCamera();camera.scale[1]=99;
     assert.deepEqual(player.getState().camera.scale,[2,5]);
+    for (const state of [player.advanceBy(1),player.resize(400,200,2)]) {
+      assert.deepEqual(state.camera,{center:[31,47],scale:[2,5]});
+      assert.equal(state.fitMode,"fill");
+      state.camera.scale[1]=99;
+      assert.deepEqual(player.getCamera().scale,[2,5]);
+      assert.deepEqual(player.getState().camera.scale,[2,5]);
+    }
     assert.equal(player.fitView("cover").fitMode,"cover");
     assert.deepEqual(player.getCamera().scale,[5,5]);
     assert.equal(other.getFitMode(),"contain");

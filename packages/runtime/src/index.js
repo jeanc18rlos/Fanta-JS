@@ -1,6 +1,7 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const canvasOwners = new WeakMap();
+const releasedCanvasContexts = new WeakMap();
 const expandedInputLimit = 64 * 1024 * 1024;
 
 export class RuntimeError extends Error {
@@ -35,6 +36,46 @@ function backingSize(width, height, scale) {
     throw new RuntimeError("Presentation exceeds the 128 MiB surface budget", "ResourceLimit");
   }
   return [physicalWidth, physicalHeight];
+}
+
+function releaseCanvasContext(canvas, context, extension, lossEventReceived = false) {
+  if (!context || !extension || releasedCanvasContexts.has(canvas)) return;
+  const alreadyLost = context.isContextLost();
+  let released;
+  const release = { context, extension, restore: !alreadyLost, released: new Promise(resolve => { released = resolve; }) };
+  const lost = event => {
+    event.preventDefault();
+    canvas.removeEventListener("webglcontextlost", lost);
+    // Restoration is invalid until the cancelled loss event has finished dispatching.
+    setTimeout(released, 0);
+  };
+  releasedCanvasContexts.set(canvas, release);
+  if (alreadyLost && lossEventReceived) setTimeout(released, 0);
+  else canvas.addEventListener("webglcontextlost", lost, { once: true });
+  if (!alreadyLost) extension.loseContext();
+}
+
+async function restoreReleasedCanvas(canvas, release) {
+  let timeout, restored;
+  const deadline = new Promise((resolve, reject) => {
+    timeout = setTimeout(() => reject(new RuntimeError("WebGL context restoration timed out", "GraphicsRestoreFailed")), 10000);
+  });
+  try {
+    await Promise.race([release.released, deadline]);
+    if (release.context.isContextLost()) {
+      const restoration = new Promise(resolve => {
+        restored = resolve;
+        canvas.addEventListener("webglcontextrestored", restored, { once: true });
+      });
+      if (release.restore) release.extension.restoreContext();
+      await Promise.race([restoration, deadline]);
+    }
+    if (release.context.isContextLost()) throw new RuntimeError("WebGL context could not be restored", "GraphicsRestoreFailed");
+    if (releasedCanvasContexts.get(canvas) === release) releasedCanvasContexts.delete(canvas);
+  } finally {
+    clearTimeout(timeout);
+    if (restored) canvas.removeEventListener("webglcontextrestored", restored);
+  }
 }
 
 class Transport {
@@ -140,11 +181,27 @@ class Runtime {
     if (!["prototype", "none"].includes(input)) throw new TypeError("input must be prototype or none");
     if (typeof autoBind !== "boolean") throw new TypeError("autoBind must be a boolean");
     if (clock === "auto" && typeof globalThis.requestAnimationFrame !== "function") throw new TypeError("Automatic playback requires a browser animation clock");
-    const { handle } = this.transport.request({ operation: "createPlayer", program: program.handle, width, height, start: options.start ?? null, fit });
-    const player = new Player(this, handle, { ...options, width, height, scale, clock, input, autoBind, fit, automaticScale: options.scale === undefined });
-    try { player.initialize(); } catch (error) { player.dispose(); throw error; }
-    this.players.add(player);
-    return player;
+    const reservation = {};
+    if (canvas) canvasOwners.set(canvas, reservation);
+    let recovered;
+    try {
+      const release = canvas && releasedCanvasContexts.get(canvas);
+      if (release) {
+        await restoreReleasedCanvas(canvas, release);
+        recovered = release.context;
+      }
+      this.assertAlive(); program.assertAlive();
+      const { handle } = this.transport.request({ operation: "createPlayer", program: program.handle, width, height, start: options.start ?? null, fit });
+      const player = new Player(this, handle, { ...options, width, height, scale, clock, input, autoBind, fit, automaticScale: options.scale === undefined });
+      try { player.initialize(); } catch (error) { player.dispose(); throw error; }
+      this.players.add(player);
+      return player;
+    } catch (error) {
+      if (recovered && canvasOwners.get(canvas) === reservation) releaseCanvasContext(canvas, recovered, recovered.getExtension("WEBGL_lose_context"));
+      throw error;
+    } finally {
+      if (canvas && canvasOwners.get(canvas) === reservation) canvasOwners.delete(canvas);
+    }
   }
   dispose() {
     if (this.disposed) return;
@@ -185,6 +242,7 @@ class Player {
     this.listeners = new Map(); this.cleanup = []; this.state = null; this.schedule = null;
     this.dirty = true; this.lastTime = null; this.animationFrame = null; this.timeout = null;
     this.hidden = false; this.contextLost = false; this.graphics = null; this.renderMetrics = { wholeFrameReadbacks: 0 };
+    this.webglContext = null; this.contextLossExtension = null;
     this.pinnedCanvasDimensions = new Set();
     this.initialBackingSize = options.canvas ? [options.canvas.width, options.canvas.height] : null;
   }
@@ -283,9 +341,9 @@ class Player {
     this.assertAlive();
     if (!Number.isFinite(deltaMs) || deltaMs < 0) throw new TypeError("deltaMs must be finite and nonnegative");
     try {
-      const result = this.accept(this.raw("advanceBy", { deltaMs }));
+      this.accept(this.raw("advanceBy", { deltaMs }));
       this.lastTime = performance.now(); this.render(); this.scheduleNext();
-      return structuredClone(result.state);
+      return structuredClone(this.state);
     } catch (error) {
       this.cancelScheduled(); this.accept(this.raw("pausePlayback")); this.emit("error", error); throw error;
     }
@@ -297,12 +355,12 @@ class Player {
     const [physicalWidth, physicalHeight] = this.options.canvas ? backingSize(width, height, scale) : [positive(width, "width"), positive(height, "height")];
     positive(scale, "scale");
     this.synchronize();
-    const result = this.accept(this.raw("resize", { width, height, scale }));
+    this.accept(this.raw("resize", { width, height, scale }));
     this.options.width = width; this.options.height = height; this.options.scale = scale;
     if (this.options.canvas) {
       this.setBackingSize(physicalWidth, physicalHeight);
     }
-    this.render(); this.scheduleNext(); return structuredClone(result.state);
+    this.render(); this.scheduleNext(); return structuredClone(this.state);
   }
   resizeDrawingSurfaceToCanvas() {
     this.assertAlive();
@@ -351,6 +409,8 @@ class Player {
     if (!context) throw new RuntimeError("WebGL2 is required", "UnsupportedGraphics");
     // Skia queries advertised renderer details that Emscripten does not enable by default.
     context.getExtension("WEBGL_debug_renderer_info");
+    this.webglContext = context;
+    this.contextLossExtension = context.getExtension("WEBGL_lose_context");
     this.graphics = module.GL.registerContext(context, { majorVersion: 2 });
     this.setBackingSize(physicalWidth, physicalHeight);
     module.GL.makeContextCurrent(this.graphics);
@@ -389,7 +449,11 @@ class Player {
     listen(canvas, "webglcontextlost", event => {
       event.preventDefault(); this.contextLost = true; this.cancelScheduled();
       this.runtime.transport.request({ operation: "releaseGraphics", player: this.handle });
-      if (this.graphics !== null) this.runtime.transport.module.GL.deleteContext(this.graphics);
+      if (this.graphics !== null) {
+        const module = this.runtime.transport.module;
+        module.GL.deleteContext(this.graphics);
+        if (module.ctx === this.webglContext) module.GL.makeContextCurrent(0);
+      }
       this.graphics = null;
     });
     listen(canvas, "webglcontextrestored", () => {
@@ -469,9 +533,16 @@ class Player {
     for (const cleanup of this.cleanup) cleanup();
     if (this.graphics !== null && !this.contextLost) this.runtime.transport.module.GL.makeContextCurrent(this.graphics);
     this.runtime.transport.request({ operation: "disposePlayer", player: this.handle });
-    if (this.graphics !== null) this.runtime.transport.module.GL.deleteContext(this.graphics);
+    if (this.graphics !== null) {
+      const module = this.runtime.transport.module;
+      module.GL.deleteContext(this.graphics);
+      // Emscripten deletes the handle but retains its last WebGL context separately.
+      if (module.ctx === this.webglContext) module.GL.makeContextCurrent(0);
+    }
     if (this.initialBackingSize) [this.options.canvas.width, this.options.canvas.height] = this.initialBackingSize;
+    if (this.options.canvas) releaseCanvasContext(this.options.canvas, this.webglContext, this.contextLossExtension, this.contextLost);
     if (this.options.canvas && canvasOwners.get(this.options.canvas) === this) canvasOwners.delete(this.options.canvas);
     this.runtime.players.delete(this); this.listeners.clear(); this.cleanup = []; this.graphics = null; this.disposed = true;
+    this.webglContext = null; this.contextLossExtension = null;
   }
 }
