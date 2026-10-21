@@ -1,0 +1,14 @@
+import "../../styles/project.fss";
+<Frame id="00000000000000000000000001" name="Demo">
+  <Frame id="00000000000000000000000002" name="Home" width={320} height={180} background={{"kind":"solid","color":fnxColor("#172033")}} reactions={[{"id":"00000000000000000000000020","trigger":{"kind":"after_delay","delay_ms":2000},"action":{"kind":"navigate","to":"00000000000000000000000004"},"transition":{"style":{"kind":"dissolve"},"duration_ms":300,"easing":"ease_in_out"}}]}>
+    <Frame id="00000000000000000000000003" name="Moving card" class="s_00000000000000000000000040" x={24} y={32} width={64} height={64} />
+    <Text id="00000000000000000000000005" name="Label" content="FNX + FSS" class="s_00000000000000000000000041" x={24} y={110} />
+    <Image id="00000000000000000000000050" name="Image" asset="00000000000000000000000051" x={112} y={24} width={40} height={40} natural_size={[1,1]} />
+    <Frame id="00000000000000000000000052" name="Masked" x={200} y={24} width={60} height={60}>
+      <Frame id="00000000000000000000000053" name="Mask" width={30} height={60} background={{"kind":"solid","color":fnxColor("#FFFFFF")}} is_mask={true} />
+      <Frame id="00000000000000000000000054" name="Masked color" width={60} height={60} background={{"kind":"solid","color":fnxColor("#F39829")}} />
+    </Frame>
+    <Frame id="00000000000000000000000055" name="Blur" x={280} y={24} width={16} height={16} background={{"kind":"solid","color":fnxColor("#FFFFFF")}} blurs={[{"kind":"layer","radius":4}]} />
+  </Frame>
+  <Frame id="00000000000000000000000004" name="Done" x={400} width={320} height={180} background={{"kind":"solid","color":fnxColor("#1A8165")}} />
+</Frame>

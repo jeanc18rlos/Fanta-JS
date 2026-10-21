@@ -1,9 +1,24 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {test,expect} from "@playwright/test";
 import {PNG} from "pngjs";
+import {compileNatively,nativeFixture} from "./native.js";
+import {exampleSource,fitSource,ids,fitIds} from "./sources.js";
+
+// Sources are compiled natively in the test process; only bundles reach the page.
+const fixtureAvailable=nativeFixture()!==null;
+const face=file=>({family:"Runtime Sans",weight:400,bytes:readFileSync(new URL(`../../../fixtures/fonts/${file}`,import.meta.url))});
+const sans=()=>face("source-sans-3/SourceSans3-Variable.ttf");
+const serif=()=>face("source-serif-4/SourceSerif4-Variable.ttf");
+function exampleBundle(font=sans(),edit=source=>source) {
+  const source=exampleSource({text:true,graphics:true,delay:1000});
+  source.fonts=[font];
+  return compileNatively(edit(source)).bundleBase64;
+}
 
 const browserErrors = new WeakMap();
 test.beforeEach(async({page})=>{
+  test.skip(!fixtureAvailable,"Build cargo example playback_fixture in fanta-edit to compile the browser test sources natively");
   const errors=[];browserErrors.set(page,errors);
   page.on("pageerror",error=>errors.push(error.message));
   page.on("console",message=>{if(message.type()==="error")errors.push(message.text());});
@@ -18,41 +33,41 @@ function pixel(image,x,y) {
 }
 
 async function load(page) {
+  const bundle=exampleBundle();
   await page.goto("/packages/runtime/examples/blank.html");
-  await page.evaluate(async()=>{
+  await page.evaluate(async({bundle,ids})=>{
     const {createRuntime}=await import("/packages/runtime/src/index.js");
-    const {exampleSource,ids}=await import("/packages/runtime/examples/source.js");
+    const decode=encoded=>Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));
     const runtime=await createRuntime();
-    const source=exampleSource({text:true,graphics:true,delay:1000});
-    source.fonts=[{family:"Runtime Sans",weight:400,bytes:new Uint8Array(await (await fetch("/fixtures/fonts/source-sans-3/SourceSans3-Variable.ttf")).arrayBuffer())}];
-    const program=await runtime.compileSource(source);
+    const program=await runtime.loadBundle(decode(bundle));
     function canvas(name){const canvas=document.createElement("canvas");canvas.id=name;canvas.style="display:block;width:320px;height:180px;touch-action:none";document.body.append(canvas);return canvas;}
     const player=await runtime.createPlayer({program,canvas:canvas("first"),width:320,height:180,clock:"manual"});
-    const bundle=await runtime.loadBundle(program.toBundle());
-    const other=await runtime.createPlayer({program:bundle,canvas:canvas("second"),width:320,height:180,clock:"manual"});
-    window.fixture={runtime,program,player,other,ids,source,canvas};
-  });
+    const loaded=await runtime.loadBundle(decode(bundle));
+    const other=await runtime.createPlayer({program:loaded,canvas:canvas("second"),width:320,height:180,clock:"manual"});
+    window.fixture={runtime,program,player,other,ids,decode,canvas};
+  },{bundle,ids});
 }
 
 async function loadFit(page,options={}) {
+  const bundle=compileNatively(fitSource({transition:options.transition??{kind:"dissolve"},transitionMarkers:options.transitionMarkers??false})).bundleBase64;
   await page.goto("/packages/runtime/examples/blank.html");
-  await page.evaluate(async options=>{
+  await page.evaluate(async({bundle,options,ids})=>{
     const {createRuntime}=await import("/packages/runtime/src/index.js");
-    const {fitSource,fitIds}=await import("/packages/runtime/examples/source.js");
+    const decode=encoded=>Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));
     const runtime=await createRuntime();
-    const program=await runtime.compileSource(fitSource({transition:options.transition??{kind:"dissolve"},transitionMarkers:options.transitionMarkers??false}));
-    const loaded=await runtime.loadBundle(program.toBundle());
+    const program=await runtime.loadBundle(decode(bundle));
+    const loaded=await runtime.loadBundle(decode(bundle));
     document.body.style.margin="0";
     const canvas=(name,left)=>{const canvas=document.createElement("canvas");canvas.id=name;canvas.style=`position:absolute;left:${left}px;top:32px;width:300px;height:300px;display:block`;document.body.append(canvas);return canvas;};
     const settings={width:300,height:300,fit:options.fit??"fill",scale:options.scale??1,clock:"manual"};
     const player=await runtime.createPlayer({program,canvas:canvas("fit-first",44),...settings});
     const other=await runtime.createPlayer({program:loaded,canvas:canvas("fit-second",540),...settings});
     const links=[];player.on("link",event=>links.push(event.url));
-    window.fitFixture={runtime,program,player,other,ids:fitIds,links};
-  },options);
+    window.fitFixture={runtime,program,player,other,ids,links};
+  },{bundle,options,ids:fitIds});
 }
 
-test("contain, cover and fill render actual independent camera geometry for source and bundles",async({page})=>{
+test("contain, cover and fill render actual independent camera geometry for independent programs",async({page})=>{
   await loadFit(page);
   for (const [fit,scale,colors] of [
     ["contain",[1.5,1.5],[[255,255,255,255],[0,0,0,255],[0,0,0,255],[255,0,0,255]]],
@@ -168,7 +183,7 @@ test("fill overlays inherit both scales and moving incoming hits follow their di
   await page.evaluate(()=>fitFixture.runtime.dispose());
 });
 
-test("source and bundles render identical pixels and deterministic playback without frame readbacks",async({page})=>{
+test("two loads of one bundle render identical pixels and deterministic playback without frame readbacks",async({page})=>{
   const failures=[];page.on("pageerror",error=>failures.push(error.message));
   await load(page);
   const firstFrame=await page.locator("#first").screenshot();
@@ -271,15 +286,13 @@ test("paused players redraw controls, cancel pointers, and retain sizes after re
   await page.evaluate(()=>fixture.runtime.dispose());
 });
 
-test("programs isolate different supplied faces registered under the same family",async({page})=>{
+test("programs isolate different embedded faces registered under the same family",async({page})=>{
   await load(page);
   const original=await page.locator("#first").screenshot();
-  await page.evaluate(async()=>{
-    const source=structuredClone(fixture.source);
-    source.fonts=[{family:"Runtime Sans",weight:400,bytes:new Uint8Array(await(await fetch("/fixtures/fonts/source-serif-4/SourceSerif4-Variable.ttf")).arrayBuffer())}];
-    const program=await fixture.runtime.compileSource(source);
+  await page.evaluate(async bundle=>{
+    const program=await fixture.runtime.loadBundle(fixture.decode(bundle));
     fixture.serif=await fixture.runtime.createPlayer({program,canvas:fixture.canvas("serif"),clock:"manual"});
-  });
+  },exampleBundle(serif()));
   assert.notDeepEqual(original,await page.locator("#serif").screenshot());
   await page.evaluate(()=>{fixture.player.playClip(fixture.ids.clip);fixture.player.seekClip(0);});
   assert.deepEqual(original,await page.locator("#first").screenshot());
@@ -335,14 +348,15 @@ test("an unstyled canvas keeps logical size when its backing scale changes",asyn
 
 test("browser keys use the focused player and deliver host links after the state step",async({page})=>{
   await load(page);
-  await page.evaluate(async()=>{
-    const source=structuredClone(fixture.source);
-    const reactions=[{id:"00000000000000000000000020",trigger:{kind:"key",keys:["Space"]},action:{kind:"open_link",url:"https://example.invalid/host-event"}}];
-    source.files["pages/demo/page.fnx"]=source.files["pages/demo/page.fnx"].replace(/reactions=\{.*?\}>/,`reactions={${JSON.stringify(reactions)}}>`);
-    const program=await fixture.runtime.compileSource(source);
+  const reactions=[{id:"00000000000000000000000020",trigger:{kind:"key",keys:["Space"]},action:{kind:"open_link",url:"https://example.invalid/host-event"}}];
+  await page.evaluate(async bundle=>{
+    const program=await fixture.runtime.loadBundle(fixture.decode(bundle));
     fixture.keys=await fixture.runtime.createPlayer({program,canvas:fixture.canvas("keys"),clock:"manual"});
     fixture.links=[];fixture.keys.on("link",event=>fixture.links.push({url:event.url,frame:fixture.keys.getState().currentFrame}));
-  });
+  },exampleBundle(sans(),source=>{
+    source.files["pages/demo/page.fnx"]=source.files["pages/demo/page.fnx"].replace(/reactions=\{.*?\}>/,`reactions={${JSON.stringify(reactions)}}>`);
+    return source;
+  }));
   await page.locator("#first").focus();await page.keyboard.press("Space");
   expect(await page.evaluate(()=>fixture.links)).toEqual([]);
   await page.locator("#keys").focus();await page.keyboard.press("Space");

@@ -89,6 +89,8 @@ jobs:
 
       - name: Test Chromium, Firefox and WebKit
         # Linux Firefox needs a display to create its WebGL context.
+        env:
+          FANTA_NATIVE_FIXTURE: ${{ github.workspace }}/.engine/fanta-edit/target/debug/examples/playback_fixture
         run: xvfb-run -a pnpm --filter fanta-runtime run test:browser
 
       - name: Preserve browser verification evidence
