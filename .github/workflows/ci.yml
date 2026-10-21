@@ -87,6 +87,15 @@ jobs:
           "${RUNNER_TEMP}/fanta-emsdk/emsdk" activate 6.0.12
           echo "EMSDK=${RUNNER_TEMP}/fanta-emsdk" >> "${GITHUB_ENV}"
 
+      - name: Install libclang 21 for a Skia source build
+        # bindgen parses the Emscripten sysroot's libc++ headers, which need
+        # Clang 20 or later; the runner's libclang is 18 and Emscripten ships none.
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.skia_gn_args != '' }}
+        run: |
+          wget -qO "${RUNNER_TEMP}/llvm.sh" https://apt.llvm.org/llvm.sh
+          sudo bash "${RUNNER_TEMP}/llvm.sh" 21
+          echo "LIBCLANG_PATH=/usr/lib/llvm-21/lib" >> "${GITHUB_ENV}"
+
       - name: Build the browser and Node WASM module
         env:
           FANTA_RUNTIME_PROFILE: ${{ inputs.profile || 'release-runtime' }}

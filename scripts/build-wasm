@@ -47,20 +47,12 @@ export RUSTFLAGS="$rustflags"
 if [[ -n "${SKIA_GN_ARGS:-}" ]]; then
   # GN arguments only reach a Skia built from source; prebuilt archives ignore them.
   export FORCE_SKIA_BUILD=1
-  # A source build generates the bindings with bindgen, which must parse the
-  # Emscripten sysroot's libc++ headers with a libclang at least as new as the
-  # Emscripten clang; the host's libclang is older. The prebuilt archive ships
-  # its bindings, so only this path needs Emscripten's own libclang.
+  # A source build generates the bindings with bindgen, which parses the
+  # Emscripten sysroot's libc++ headers; they need libclang 20 or later, and
+  # the Emscripten SDK ships none. The prebuilt archive carries its bindings,
+  # so only this path needs LIBCLANG_PATH (CI installs LLVM 21 for it).
   if [[ -z "${LIBCLANG_PATH:-}" ]]; then
-    for candidate in "$EMSDK"/upstream/lib/libclang.so "$EMSDK"/upstream/lib/libclang.so.* "$EMSDK"/upstream/lib/libclang.dylib; do
-      if [[ -e "$candidate" ]]; then
-        export LIBCLANG_PATH="$EMSDK/upstream/lib"
-        break
-      fi
-    done
-    if [[ -z "${LIBCLANG_PATH:-}" ]]; then
-      echo "No libclang under $EMSDK/upstream/lib; bindgen will use the host libclang, which may not parse the Emscripten sysroot headers." >&2
-    fi
+    echo "LIBCLANG_PATH is unset; bindgen needs libclang 20 or later to parse the Emscripten sysroot headers for a Skia source build." >&2
   fi
 fi
 echo "Building fanta-runtime-wasm with profile ${profile}, RUSTFLAGS=${RUSTFLAGS}${SKIA_GN_ARGS:+, SKIA_GN_ARGS=$SKIA_GN_ARGS}"
