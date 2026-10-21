@@ -3,6 +3,11 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 engine="${FANTA_EDIT_DIR:-$root/.engine/fanta-edit}"
+# The runtime's size-first Cargo profile (opt-level s, fat LTO, no debug info,
+# stripped). `release` builds the engine's general profile for comparison.
+profile="${FANTA_RUNTIME_PROFILE:-release-runtime}"
+# Binaryen's whole-module optimization at link time; "none" keeps emcc's default.
+wasm_opt="${FANTA_WASM_OPT:--Oz}"
 if [[ ! -f "$engine/crates/fanta-runtime/Cargo.toml" ]]; then
   echo "No fanta-edit checkout with crates/fanta-runtime at ${engine}. Run ./scripts/fetch-engine or set FANTA_EDIT_DIR." >&2
   exit 1
@@ -22,10 +27,39 @@ cd "$engine"
 rustup target add wasm32-unknown-emscripten
 export EMCC_CFLAGS="-sMAX_WEBGL_VERSION=2 -sERROR_ON_UNDEFINED_SYMBOLS=0"
 export CARGO_TARGET_WASM32_UNKNOWN_EMSCRIPTEN_LINKER="$root/scripts/fanta-runtime-linker"
-export RUSTFLAGS="${RUSTFLAGS:-} -C panic=abort -C link-arg=-sMODULARIZE=1 -C link-arg=-sEXPORT_ES6=1 -C link-arg=-sEXPORT_NAME=createFantaModule -C link-arg=-sENVIRONMENT=web,node -C link-arg=-sALLOW_MEMORY_GROWTH=1 -C link-arg=-sMAXIMUM_MEMORY=536870912 -C link-arg=-sDYNAMIC_EXECUTION=0 -C link-arg=-sMAX_WEBGL_VERSION=2 -C link-arg=-sDEFAULT_TO_CXX=1 -C link-arg=-sDISABLE_EXCEPTION_CATCHING=0 -C link-arg=-sSUPPORT_LONGJMP=emscripten -C link-arg=-sERROR_ON_UNDEFINED_SYMBOLS=0 -C link-arg=-sEXPORTED_RUNTIME_METHODS=GL,HEAPU8 -C link-arg=-sEXPORTED_FUNCTIONS=_fanta_alloc,_fanta_buffer_len,_fanta_free,_fanta_request,_main"
-cargo build --locked --release --target wasm32-unknown-emscripten -p fanta-runtime --bin fanta-runtime-wasm
+link_args=(
+  -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createFantaModule -sENVIRONMENT=web,node
+  -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=536870912 -sDYNAMIC_EXECUTION=0 -sMAX_WEBGL_VERSION=2
+  -sDEFAULT_TO_CXX=1 -sDISABLE_EXCEPTION_CATCHING=0 -sSUPPORT_LONGJMP=emscripten -sERROR_ON_UNDEFINED_SYMBOLS=0
+  -sEXPORTED_RUNTIME_METHODS=GL,HEAPU8 -sEXPORTED_FUNCTIONS=_fanta_alloc,_fanta_buffer_len,_fanta_free,_fanta_request,_main
+)
+if [[ "$wasm_opt" != "none" ]]; then
+  link_args+=("$wasm_opt")
+fi
+# Extra emcc link arguments, space separated: for example --closure=1 -sMALLOC=emmalloc.
+# shellcheck disable=SC2206
+link_args+=(${FANTA_WASM_LINK_ARGS:-})
+rustflags="${RUSTFLAGS:-} -C panic=abort"
+for link_arg in "${link_args[@]}"; do
+  rustflags+=" -C link-arg=$link_arg"
+done
+export RUSTFLAGS="$rustflags"
+if [[ -n "${SKIA_GN_ARGS:-}" ]]; then
+  # GN arguments only reach a Skia built from source; prebuilt archives ignore them.
+  export FORCE_SKIA_BUILD=1
+  # A source build generates the bindings with bindgen, which parses the
+  # Emscripten sysroot's libc++ headers; they need libclang 20 or later, and
+  # the Emscripten SDK ships none. The prebuilt archive carries its bindings,
+  # so only this path needs LIBCLANG_PATH (CI installs LLVM 21 for it).
+  if [[ -z "${LIBCLANG_PATH:-}" ]]; then
+    echo "LIBCLANG_PATH is unset; bindgen needs libclang 20 or later to parse the Emscripten sysroot headers for a Skia source build." >&2
+  fi
+fi
+echo "Building fanta-runtime-wasm with profile ${profile}, RUSTFLAGS=${RUSTFLAGS}${SKIA_GN_ARGS:+, SKIA_GN_ARGS=$SKIA_GN_ARGS}"
+cargo build --locked --profile "$profile" --target wasm32-unknown-emscripten -p fanta-runtime --bin fanta-runtime-wasm
 target="${CARGO_TARGET_DIR:-$engine/target}"
+built="$target/wasm32-unknown-emscripten/$profile"
 dist="$root/packages/runtime/dist"
 mkdir -p "$dist"
-cp "$target/wasm32-unknown-emscripten/release/fanta-runtime-wasm.js" "$dist/fanta-runtime.mjs"
-cp "$target/wasm32-unknown-emscripten/release/fanta_runtime_wasm.wasm" "$dist/fanta_runtime_wasm.wasm"
+cp "$built/fanta-runtime-wasm.js" "$dist/fanta-runtime.mjs"
+cp "$built/fanta_runtime_wasm.wasm" "$dist/fanta_runtime_wasm.wasm"

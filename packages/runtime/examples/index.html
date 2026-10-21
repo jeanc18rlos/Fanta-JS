@@ -9,25 +9,24 @@
   button {margin:16px 8px 0 0;padding:10px 16px}
   #status {max-width:800px;white-space:pre-wrap}
 </style>
-<h1>FNX + FSS prototype</h1>
+<h1>Fanta prototype</h1>
 <canvas id="prototype" aria-label="Interactive Fanta prototype"></canvas>
 <button id="restart">Restart</button><button id="motion">Play motion</button><button id="pause">Pause</button>
 <p id="status">Loading…</p>
 <script type="module">
   import {createRuntime} from "../src/index.js";
-  import {exampleSource,ids} from "./source.js";
   const status=document.querySelector("#status");
   try {
     const runtime=await createRuntime();
-    const bytes=new Uint8Array(await (await fetch("../../../fixtures/fonts/source-sans-3/SourceSans3-Variable.ttf")).arrayBuffer());
-    const source=exampleSource({text:true,graphics:true});
-    source.fonts=[{family:"Runtime Sans",weight:400,bytes}];
-    const program=await runtime.compileSource(source);
+    // program.fanta is built from ./project by fanta-compile; see README.md.
+    const response=await fetch("./program.fanta");
+    if (!response.ok) throw new Error(`program.fanta was not found (HTTP ${response.status}). Compile examples/project with fanta-compile first; see README.md.`);
+    const program=await runtime.loadBundle(new Uint8Array(await response.arrayBuffer()));
     const player=await runtime.createPlayer({program,canvas:document.querySelector("#prototype")});
     player.on("error",error=>{status.textContent=error.message??JSON.stringify(error);});
     player.on("navigate",()=>{status.textContent="The delayed interaction navigated to the next frame.";});
     document.querySelector("#restart").onclick=()=>{player.restart();status.textContent="Restarted";};
-    document.querySelector("#motion").onclick=()=>player.playClip(ids.clip,{mode:"pingPong"});
+    document.querySelector("#motion").onclick=()=>player.playClip(program.clips[0].id,{mode:"pingPong"});
     let paused=false;
     document.querySelector("#pause").onclick=()=>{paused=!paused;paused?player.pausePlayback():player.resumePlayback();};
     status.textContent="Ready. The prototype changes frame after two seconds.";

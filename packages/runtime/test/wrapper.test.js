@@ -17,7 +17,7 @@ async function transportFixture() {
       const request = JSON.parse(decoder.decode(this.HEAPU8.subarray(pointer, pointer + buffers.get(pointer))));
       requests.push(request);
       let value;
-      if (request.operation === "compileSource") value = {handle:handle++,flows:[],clips:[],diagnostics:[],capabilities:{media:"posters",liveVideo:false,liveAudio:false}};
+      if (request.operation === "loadBundle") value = {handle:handle++,flows:[],clips:[],diagnostics:[],capabilities:{media:"posters",liveVideo:false,liveAudio:false}};
       else if (request.operation === "createPlayer") { const player = handle++; modes.set(player, request.fit); value = {handle:player}; }
       else if (request.operation === "command") {
         if (request.command === "fit" && request.arguments.mode) modes.set(request.player, request.arguments.mode);
@@ -33,9 +33,21 @@ async function transportFixture() {
     },
   };
   const runtime = await createRuntime({moduleFactory:async()=>module});
-  const program = await runtime.compileSource({files:{}});
+  const program = await runtime.loadBundle(new Uint8Array([80,75,3,4]));
   return {runtime,program,requests};
 }
+
+test("the runtime loads bundles only: sources are compiled natively before they reach the engine",async()=>{
+  const {runtime,program,requests} = await transportFixture();
+  try {
+    assert.equal(runtime.compileSource,undefined);
+    assert.equal(program.toBundle,undefined);
+    assert.deepEqual(requests.map(request=>request.operation),["loadBundle"]);
+    assert.equal(typeof requests[0].bytes,"number");
+    await assert.rejects(runtime.loadBundle({files:{}}),TypeError);
+    assert.equal(requests.length,1);
+  } finally { runtime.dispose(); }
+});
 
 test("wrapper forwards fit policy and exposes the authoritative two-axis camera without projecting it",async()=>{
   const {runtime,program,requests} = await transportFixture();

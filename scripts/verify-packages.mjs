@@ -38,7 +38,7 @@ try {
     const directory = join(root, "packages", name);
     const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
     assert.equal(manifest.name, `fanta-${name}`);
-    assert.equal(manifest.version, "0.1.1");
+    assert.equal(manifest.version, "0.2.0");
     assert.equal(manifest.license, "GPL-3.0-only");
     assert.equal(manifest.publishConfig?.access, "public");
     assert.notEqual(manifest.private, true);

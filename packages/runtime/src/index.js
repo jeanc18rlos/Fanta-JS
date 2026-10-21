@@ -105,19 +105,6 @@ class Transport {
       if (output) this.module._fanta_free(output);
     }
   }
-  source(source) {
-    const resources = Object.entries(source.files).map(([path, value]) => [path, bytes(value)]);
-    const registrations = (source.fonts ?? []).map(font => ({ ...font, bytes: bytes(font.bytes) }));
-    const total = resources.reduce((size, [, value]) => size + value.length, 0) + registrations.reduce((size, font) => size + font.bytes.length, 0);
-    if (total > expandedInputLimit) throw new RuntimeError("Source bundle exceeds the 64 MiB expanded input budget", "ResourceLimit");
-    const allocated = [];
-    const allocate = value => { const pointer = this.allocate(value); allocated.push(pointer); return pointer; };
-    try {
-      const files = Object.fromEntries(resources.map(([path, value]) => [path, allocate(value)]));
-      const fonts = registrations.map(font => ({ ...font, bytes: allocate(font.bytes) }));
-      return this.request({ operation: "compileSource", files, fonts, fontSubstitutions: source.fontSubstitutions ?? {} });
-    } finally { for (const pointer of allocated) this.module._fanta_free(pointer); }
-  }
   binary(operation, input) {
     const data = bytes(input);
     if (data.length > expandedInputLimit) throw new RuntimeError("Bundle exceeds the 64 MiB input budget", "ResourceLimit");
@@ -149,13 +136,6 @@ export async function createRuntime(options = {}) {
 class Runtime {
   constructor(transport) { this.transport = transport; this.programs = new Set(); this.players = new Set(); this.disposed = false; }
   assertAlive() { if (this.disposed) throw new RuntimeError("Runtime was disposed", "Disposed"); }
-  async compileSource(source) {
-    this.assertAlive();
-    if (!source?.files || typeof source.files !== "object") throw new TypeError("compileSource requires a files map");
-    const program = new Program(this, this.transport.source(source));
-    this.programs.add(program);
-    return program;
-  }
   async loadBundle(data) {
     this.assertAlive();
     const program = new Program(this, this.transport.binary("loadBundle", data));
@@ -219,12 +199,6 @@ class Program {
   get clips() { return structuredClone(this.info.clips); }
   get diagnostics() { return structuredClone(this.info.diagnostics); }
   get capabilities() { return structuredClone(this.info.capabilities); }
-  toBundle() {
-    this.assertAlive();
-    const { buffer } = this.runtime.transport.request({ operation: "toBundle", program: this.handle });
-    try { return this.runtime.transport.copy(buffer); }
-    finally { this.runtime.transport.module._fanta_free(buffer); }
-  }
   inspect() {
     this.assertAlive();
     return this.runtime.transport.request({ operation: "inspectProgram", program: this.handle });

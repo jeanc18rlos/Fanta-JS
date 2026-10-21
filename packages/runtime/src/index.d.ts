@@ -1,7 +1,5 @@
 export type Resource = string | Uint8Array | ArrayBuffer;
 export type Identity = string;
-export interface Font { family: string; weight?: number; italic?: boolean; faceIndex?:number; bytes: Resource; }
-export interface SourceBundle { files: Record<string, Resource>; fonts?: Font[]; fontSubstitutions?: Record<string, string>; }
 export interface Occurrence { layer: number; node: Identity; instancePath: Identity[]; definitionPath: Identity[]; }
 export interface Diagnostic { code: string; message: string; path?: string; }
 export interface Flow { name: string; start: Identity; }
@@ -20,7 +18,7 @@ export type VariableValue = {kind:"float";value:number} | {kind:"color";value:{r
 export interface Program {
   readonly flows: Flow[]; readonly clips: Clip[]; readonly diagnostics: Diagnostic[];
   readonly capabilities: {media:"posters";liveVideo:false;liveAudio:false};
-  toBundle(): Uint8Array; inspect():Record<string,unknown>; dispose(): void;
+  inspect():Record<string,unknown>; dispose(): void;
 }
 export interface Player {
   startFlow(index: number): PlaybackState; navigate(frame: Identity): PlaybackState; back(): PlaybackState; restart(start?: Identity): PlaybackState;
@@ -36,7 +34,7 @@ export interface Player {
   on(name:"navigate"|"link"|"clipCompleted"|"error"|"exit",listener:(event:any)=>void):()=>void; dispose():void;
 }
 export interface Runtime {
-  compileSource(source:SourceBundle):Promise<Program>; loadBundle(bytes:Resource):Promise<Program>;
+  loadBundle(bytes:Resource):Promise<Program>;
   createPlayer(options:{program:Program;canvas?:HTMLCanvasElement;width?:number;height?:number;scale?:number;start?:Identity;fit?:FitMode;clock?:"auto"|"manual";input?:"prototype"|"none";autoBind?:boolean}):Promise<Player>;
   dispose():void;
 }

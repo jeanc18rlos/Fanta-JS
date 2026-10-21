@@ -1,7 +1,8 @@
 import {test, expect} from "@playwright/test";
 import {readFile} from "node:fs/promises";
-import {gzipSync} from "node:zlib";
+import {gzipSync, brotliCompressSync, constants} from "node:zlib";
 import {arch,cpus,platform} from "node:os";
+import {compileNatively, nativeFixture} from "./native.js";
 
 const TILE_COUNT = 1000;
 const TRACK_COUNT = 100;
@@ -76,26 +77,33 @@ function percentile(values, fraction) {
 
 test("report warm 1080p playback with 1000 tiles, 100 tracks, overlays and transitions", async ({page, browserName}, testInfo) => {
   test.skip(browserName !== "chromium", "The reference benchmark measures Chromium; browser compatibility has separate tests.");
+  test.skip(nativeFixture() === null, "Build cargo example playback_fixture in fanta-edit to compile the benchmark fixture natively.");
   test.setTimeout(120000);
   const failures = [];
   page.on("pageerror", error => failures.push(error.message));
   const binaries = await Promise.all(["fanta-runtime.mjs", "fanta_runtime_wasm.wasm"].map(async name => {
     const bytes = await readFile(new URL(`../dist/${name}`, import.meta.url));
-    return {name, bytes: bytes.length, gzipBytes: gzipSync(bytes, {level: 9}).length};
+    const brotliBytes = brotliCompressSync(bytes, {params: {[constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_SIZE_HINT]: bytes.length}}).length;
+    return {name, bytes: bytes.length, gzipBytes: gzipSync(bytes, {level: 9}).length, brotliBytes};
   }));
   const fixture = benchmarkSource();
   expect(Object.keys(JSON.parse(fixture.source.files["doc/motion.json"]).clips[fixture.ids.clip].tracks)).toHaveLength(TRACK_COUNT);
   expect((fixture.source.files["components/tiles/component.fnx"].match(/<Rect /g) ?? []).length).toBe(TILE_COUNT);
+  // The bundle is compiled before the page loads, so startup timing measures the bundle path alone.
+  const compiled = compileNatively(fixture.source);
+  const bundle = {bytes: compiled.bundle.length, gzipBytes: gzipSync(compiled.bundle, {level: 9}).length};
   await page.goto("/packages/runtime/examples/blank.html");
-  const result = await page.evaluate(async ({source, ids, stepMs}) => {
+  const result = await page.evaluate(async ({bundle, ids, stepMs}) => {
     const imported = performance.now();
     const {createRuntime} = await import("/packages/runtime/src/index.js");
     const moduleStarted = performance.now();
     const runtime = await createRuntime();
     const moduleFinished = performance.now();
     try {
-      const program = await runtime.compileSource(source);
-      const compiled = performance.now();
+      const bytes = Uint8Array.from(atob(bundle), character => character.charCodeAt(0));
+      const loading = performance.now();
+      const program = await runtime.loadBundle(bytes);
+      const loaded = performance.now();
       const canvas = document.createElement("canvas");
       canvas.id = "benchmark";
       canvas.style = "display:block;width:1920px;height:1080px;touch-action:none";
@@ -142,11 +150,11 @@ test("report warm 1080p playback with 1000 tiles, 100 tracks, overlays and trans
       const debug = context.getExtension("WEBGL_debug_renderer_info");
       return {phases: {motion, overlay, transition}, errors,
         startup: {javascriptImportMs: moduleStarted - imported, wasmInitializationMs: moduleFinished - moduleStarted,
-          sourceCompilationMs: compiled - moduleFinished, playerInitializationMs: created - compiled},
+          bundleLoadMs: loaded - loading, playerInitializationMs: created - loaded},
         environment: {userAgent: navigator.userAgent, renderer: debug ? context.getParameter(debug.UNMASKED_RENDERER_WEBGL) : context.getParameter(context.RENDERER),
           logicalWidth: player.options.width, logicalHeight: player.options.height, physicalWidth: canvas.width, physicalHeight: canvas.height}};
     } finally {runtime.dispose();}
-  }, {source: fixture.source, ids: fixture.ids, stepMs: STEP_MS});
+  }, {bundle: compiled.bundleBase64, ids: fixture.ids, stepMs: STEP_MS});
   expect(result.environment.physicalWidth).toBe(1920);
   expect(result.environment.physicalHeight).toBe(1080);
   expect(result.errors).toEqual([]);
@@ -159,7 +167,7 @@ test("report warm 1080p playback with 1000 tiles, 100 tracks, overlays and trans
       p95FrameWorkMs: percentile(samples.map(sample => sample.elapsedMs), 0.95),
       p95DrawMs: percentile(samples.map(sample => sample.drawMs), 0.95), wholeFrameReadbacks: 0}];
   }));
-  const report = {fixture: {tileNodes: TILE_COUNT, activeTracks: TRACK_COUNT, width: 1920, height: 1080},
+  const report = {fixture: {tileNodes: TILE_COUNT, activeTracks: TRACK_COUNT, width: 1920, height: 1080, bundle},
     host: {platform:platform(),architecture:arch(),cpu:cpus()[0]?.model??"unavailable"},
     environment: result.environment, referenceGateEnabled: process.env.FANTA_RUNTIME_REFERENCE_GATE === "1",
     phases, startup: result.startup, binaries,
