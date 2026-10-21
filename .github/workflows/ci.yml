@@ -4,13 +4,32 @@ on:
   pull_request:
   push:
     branches: [main]
+  # A dispatch measures one WebAssembly build configuration: it builds, logs the
+  # module sizes, tests, and keeps packages/runtime/dist as an artifact.
   workflow_dispatch:
+    inputs:
+      profile:
+        description: Cargo profile for the WebAssembly build
+        default: release-runtime
+      wasm_opt:
+        description: Binaryen optimization emcc applies at link time (-Oz, -Os, -O3, or none)
+        default: -Oz
+      link_args:
+        description: Extra emcc link arguments, space separated (for example --closure=1 -sMALLOC=emmalloc)
+        default: ""
+      skia_gn_args:
+        description: Extra Skia GN arguments; a non-empty value forces a Skia source build
+        default: ""
+      label:
+        description: Name of this measurement, used in the artifact name
+        default: measurement
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Measurement dispatches run side by side; pushes to one ref replace each other.
+  group: ${{ github.event_name == 'workflow_dispatch' && format('ci-measure-{0}', github.run_id) || format('ci-{0}', github.ref) }}
   cancel-in-progress: true
 
 env:
@@ -69,10 +88,23 @@ jobs:
           echo "EMSDK=${RUNNER_TEMP}/fanta-emsdk" >> "${GITHUB_ENV}"
 
       - name: Build the browser and Node WASM module
+        env:
+          FANTA_RUNTIME_PROFILE: ${{ inputs.profile || 'release-runtime' }}
+          FANTA_WASM_OPT: ${{ inputs.wasm_opt || '-Oz' }}
+          FANTA_WASM_LINK_ARGS: ${{ inputs.link_args }}
+          SKIA_GN_ARGS: ${{ inputs.skia_gn_args }}
         run: ./scripts/build-wasm
 
       - name: Report module sizes
-        run: node scripts/report-module-sizes.mjs
+        run: node scripts/report-module-sizes.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve the built module
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fanta-runtime-dist-${{ inputs.label || github.event_name }}-${{ github.run_id }}
+          path: packages/runtime/dist
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Install dependencies
         run: |

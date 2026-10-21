@@ -25,7 +25,7 @@ pnpm install
 pnpm --filter fanta-runtime test
 ```
 
-Set `FANTA_EDIT_DIR` to build from an existing fanta-edit checkout instead of the pinned one.
+Set `FANTA_EDIT_DIR` to build from an existing fanta-edit checkout instead of the pinned one. The build uses the engine's size-first `release-runtime` profile with Binaryen's `-Oz`; the repository README lists the variables that change that for measurements.
 
 The build produces `dist/fanta-runtime.mjs` and `dist/fanta_runtime_wasm.wasm`. Include both when deploying. `createRuntime({moduleUrl, wasmUrl})` supports custom asset locations. Each call initializes an isolated Emscripten module. The build adapter reconciles Rust 1.95's exception flags with Skia 0.84's prebuilt JavaScript exception ABI. The module contains no source parser, so FNX and FSS never reach the browser; bundles carry compiled documents and embedded fonts, and nothing in them is executed as JavaScript.
 
