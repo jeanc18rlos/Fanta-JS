@@ -71,6 +71,9 @@ jobs:
       - name: Build the browser and Node WASM module
         run: ./scripts/build-wasm
 
+      - name: Report module sizes
+        run: node scripts/report-module-sizes.mjs
+
       - name: Install dependencies
         run: |
           pnpm install --frozen-lockfile

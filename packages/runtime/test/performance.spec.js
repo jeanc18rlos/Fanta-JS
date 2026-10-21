@@ -1,6 +1,6 @@
 import {test, expect} from "@playwright/test";
 import {readFile} from "node:fs/promises";
-import {gzipSync} from "node:zlib";
+import {gzipSync, brotliCompressSync, constants} from "node:zlib";
 import {arch,cpus,platform} from "node:os";
 import {compileNatively, nativeFixture} from "./native.js";
 
@@ -83,7 +83,8 @@ test("report warm 1080p playback with 1000 tiles, 100 tracks, overlays and trans
   page.on("pageerror", error => failures.push(error.message));
   const binaries = await Promise.all(["fanta-runtime.mjs", "fanta_runtime_wasm.wasm"].map(async name => {
     const bytes = await readFile(new URL(`../dist/${name}`, import.meta.url));
-    return {name, bytes: bytes.length, gzipBytes: gzipSync(bytes, {level: 9}).length};
+    const brotliBytes = brotliCompressSync(bytes, {params: {[constants.BROTLI_PARAM_QUALITY]: 11, [constants.BROTLI_PARAM_SIZE_HINT]: bytes.length}}).length;
+    return {name, bytes: bytes.length, gzipBytes: gzipSync(bytes, {level: 9}).length, brotliBytes};
   }));
   const fixture = benchmarkSource();
   expect(Object.keys(JSON.parse(fixture.source.files["doc/motion.json"]).clips[fixture.ids.clip].tracks)).toHaveLength(TRACK_COUNT);

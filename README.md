@@ -27,7 +27,7 @@ pnpm --filter fanta-runtime run test:browser
 
 To move to a newer engine, merge the change in fanta-edit, put its commit in `fanta-edit.rev`, and let CI rebuild and test.
 
-Before publishing, run `node scripts/verify-packages.mjs` after building WebAssembly. It checks the public `0.2.0` package contents, including runtime binaries, website viewer assets, declarations, and the complete GPL license in each package. On Linux, browser validation uses `xvfb-run -a pnpm --filter fanta-runtime run test:browser` so Firefox has a display for WebGL.
+`node scripts/report-module-sizes.mjs` prints the built module's raw, gzip and brotli sizes; CI logs them on every build. Before publishing, run `node scripts/verify-packages.mjs` after building WebAssembly. It checks the public `0.2.0` package contents, including runtime binaries, website viewer assets, declarations, and the complete GPL license in each package. On Linux, browser validation uses `xvfb-run -a pnpm --filter fanta-runtime run test:browser` so Firefox has a display for WebGL.
 
 ## Claude Code plugin
 
