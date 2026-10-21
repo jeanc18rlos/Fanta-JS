@@ -1,6 +1,6 @@
 {
   "name": "fanta-runtime",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "FNX/FSS prototype and motion playback using the Fanta Rust engine",
   "license": "GPL-3.0-only",
